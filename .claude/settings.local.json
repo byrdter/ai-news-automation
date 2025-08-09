@@ -2,7 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(grep:*)",
-      "Bash(ls:*)", 
+      "Bash(ls:*)",
       "Bash(source:*)",
       "Bash(find:*)",
       "Bash(mv:*)",
@@ -23,7 +23,15 @@
       "WebFetch(domain:docs.anthropic.com)",
       "WebFetch(domain:docs.pydantic.dev)",
       "WebFetch(domain:python.langchain.com)",
-      "WebFetch(domain:supabase.com/docs)"
+      "WebFetch(domain:supabase.com/docs)",
+      "Bash(cp:*)",
+      "Bash(chmod:*)",
+      "Bash(./daemon_ctl.sh:*)",
+      "Bash(timeout:*)",
+      "WebFetch(domain:nextjs.org)",
+      "WebFetch(domain:supabase.com)",
+      "WebFetch(domain:ui.shadcn.com)",
+      "Bash(npx create-next-app:*)"
     ],
     "deny": []
   }

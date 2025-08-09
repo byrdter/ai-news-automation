@@ -1,0 +1,98 @@
+# 🤖 AI News Summary - 2025-08-07
+
+Generated at: 2025-08-07 14:57:45 UTC
+
+## 📊 Summary Statistics
+- **Total Articles**: 46
+- **Analyzed Articles**: 0
+- **Analysis Completion**: 0.0%
+- **Average Relevance Score**: 0.00
+- **Average Quality Score**: 0.00
+
+## 📂 Content Categories
+
+## 📈 Recent Articles
+
+1. **Elon Musk says X plans to introduce ads in Grok’s responses**
+   - Source: TechCrunch AI | Published: 2025-08-07 14:35
+   - URL: https://techcrunch.com/2025/08/07/elon-musk-says-x-plans-to-introduce-ads-in-groks-responses/
+
+2. **Truth Social’s AI search is powered by Perplexity, but the platform can set limits on sources**
+   - Source: TechCrunch AI | Published: 2025-08-07 14:18
+   - URL: https://techcrunch.com/2025/08/07/truth-socials-ai-search-is-powered-by-perplexity-but-the-platform-can-set-limits-on-sources/
+
+3. **Elad Gil — one of tech’s sharpest minds — on early bets, breakout growth, and what’s coming next at TechCrunch Disrupt 2025**
+   - Source: TechCrunch AI | Published: 2025-08-07 14:00
+   - URL: https://techcrunch.com/2025/08/07/elad-gil-one-of-techs-sharpest-minds-on-early-bets-breakout-growth-and-whats-coming-next-at-techcrunch-disrupt-2025/
+
+4. **The Saga Continues: Stream 2K’s ‘Mafia: The Old Country’ at Launch on GeForce NOW**
+   - Source: NVIDIA AI Blog | Published: 2025-08-07 13:00
+   - URL: https://blogs.nvidia.com/blog/geforce-now-thursday-mafia-the-old-country/
+
+5. **MoE Architecture Comparison: Qwen3 30B-A3B vs. GPT-OSS 20B**
+   - Source: MarkTechPost | Published: 2025-08-07 05:02
+   - URL: https://www.marktechpost.com/2025/08/06/moe-architecture-comparison-qwen3-30b-a3b-vs-gpt-oss-20b/
+
+6. **Google DeepMind Introduces Genie 3: A General Purpose World Model that can Generate an Unprecedented Diversity of Interactive Environments**
+   - Source: MarkTechPost | Published: 2025-08-07 04:38
+   - URL: https://www.marktechpost.com/2025/08/06/google-deepmind-introduces-genie-3-a-general-purpose-world-model-that-can-generate-an-unprecedented-diversity-of-interactive-environments/
+
+7. **Eco-driving measures could significantly reduce vehicle emissions**
+   - Source: MIT AI News | Published: 2025-08-07 04:00
+   - URL: https://news.mit.edu/2025/eco-driving-measures-could-significantly-reduce-vehicle-emissions-0807
+
+8. **School of Architecture and Planning welcomes new faculty for 2025**
+   - Source: MIT AI News | Published: 2025-08-06 20:10
+   - URL: https://news.mit.edu/2025/school-architecture-planning-welcomes-new-faculty-0806
+
+9. **Google denies AI search features are killing website traffic**
+   - Source: TechCrunch AI | Published: 2025-08-06 19:45
+   - URL: https://techcrunch.com/2025/08/06/google-denies-ai-search-features-are-killing-website-traffic/
+
+10. **First impressions of Alexa+, Amazon’s upgraded, AI-powered digital assistant**
+   - Source: TechCrunch AI | Published: 2025-08-06 18:27
+   - URL: https://techcrunch.com/2025/08/06/first-impressions-of-alexa-amazons-upgraded-ai-powered-digital-assistant/
+
+11. **Google takes on ChatGPT’s Study Mode with new ‘Guided Learning’ tool in Gemini**
+   - Source: TechCrunch AI | Published: 2025-08-06 18:18
+   - URL: https://techcrunch.com/2025/08/06/google-takes-on-chatgpts-study-mode-with-new-guided-learning-tool-in-gemini/
+
+12. **OpenAI is practically giving ChatGPT to the government for free**
+   - Source: TechCrunch AI | Published: 2025-08-06 17:09
+   - URL: https://techcrunch.com/2025/08/06/openai-is-practically-giving-chatgpt-to-the-government-for-free/
+
+13. **Google’s AI coding agent Jules is now out of beta**
+   - Source: TechCrunch AI | Published: 2025-08-06 16:00
+   - URL: https://techcrunch.com/2025/08/06/googles-ai-coding-agent-jules-is-now-out-of-beta/
+
+14. **Payment platform Lava raises $5.8M to build digital wallets for the ‘agent-native economy’**
+   - Source: TechCrunch AI | Published: 2025-08-06 15:45
+   - URL: https://techcrunch.com/2025/08/06/billing-platform-lava-raises-5-8m-to-build-digital-wallets-for-the-agent-native-economy/
+
+15. **Tavily raises $25M to connect AI agents to the web**
+   - Source: TechCrunch AI | Published: 2025-08-06 15:15
+   - URL: https://techcrunch.com/2025/08/06/tavily-raises-25m-to-connect-ai-agents-to-the-web/
+
+16. **Cohere’s new AI agent platform, North, promises to keep enterprise data secure**
+   - Source: TechCrunch AI | Published: 2025-08-06 13:32
+   - URL: https://techcrunch.com/2025/08/06/coheres-new-ai-agent-platform-north-promises-to-keep-enterprise-data-secure/
+
+17. **Two arrested for smuggling AI chips to China — Nvidia says no to kill switches**
+   - Source: TechCrunch AI | Published: 2025-08-06 13:02
+   - URL: https://techcrunch.com/2025/08/06/two-arrested-for-smuggling-ai-chips-to-china-nvidia-says-no-to-kill-switches/
+
+18. **Final call: TechCrunch Disrupt 2025 ticket savings end tonight**
+   - Source: TechCrunch AI | Published: 2025-08-06 13:00
+   - URL: https://techcrunch.com/2025/08/06/final-call-techcrunch-disrupt-2025-ticket-savings-end-tonight/
+
+19. **Microsoft brings OpenAI’s smallest open model to Windows users**
+   - Source: TechCrunch AI | Published: 2025-08-06 12:47
+   - URL: https://techcrunch.com/2025/08/06/microsoft-brings-openais-smallest-open-model-to-windows-users/
+
+20. **Qwant and Ecosia debut Staan, a European search index that aims to take on Big Tech**
+   - Source: TechCrunch AI | Published: 2025-08-06 11:45
+   - URL: https://techcrunch.com/2025/08/06/qwant-and-ecosia-debut-staan-a-european-search-index-that-aims-to-take-on-big-tech/
+
+
+---
+*Report generated by AI News Automation System*

@@ -18,6 +18,7 @@ credentials.json
 **/api_keys/
 **/secrets/
 **/.env.*
+!.env.example
 *supabase_key*
 *cohere_key*
 *smtp_password*

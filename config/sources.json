@@ -1,0 +1,86 @@
+[
+  {
+    "name": "OpenAI Blog",
+    "url": "https://openai.com/blog/rss.xml",
+    "category": "AI Research",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "name": "Google AI Blog",
+    "url": "http://googleaiblog.blogspot.com/atom.xml",
+    "category": "AI Research",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "name": "MIT News - AI",
+    "url": "https://news.mit.edu/rss/topic/artificial-intelligence2",
+    "category": "Academic Research",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "name": "TechCrunch AI",
+    "url": "https://techcrunch.com/category/artificial-intelligence/feed/",
+    "category": "Tech News",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "name": "VentureBeat AI",
+    "url": "https://venturebeat.com/ai/feed/",
+    "category": "Industry News",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "name": "The Verge AI",
+    "url": "https://www.theverge.com/ai-artificial-intelligence/rss/index.xml",
+    "category": "Tech News",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "name": "NVIDIA Blog",
+    "url": "https://blogs.nvidia.com/feed/",
+    "category": "AI Hardware",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "name": "DeepMind Blog",
+    "url": "https://deepmind.com/blog/feed/basic/",
+    "category": "AI Research",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "name": "Stanford AI Lab Blog",
+    "url": "http://ai.stanford.edu/blog/feed.xml",
+    "category": "Academic Research",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "name": "Berkeley AI Research",
+    "url": "https://bair.berkeley.edu/blog/feed.xml",
+    "category": "Academic Research",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "name": "Hugging Face Blog",
+    "url": "https://huggingface.co/blog/feed.xml",
+    "category": "Open Source AI",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "name": "AI News",
+    "url": "https://www.artificialintelligence-news.com/feed/",
+    "category": "General AI News",
+    "priority": 3,
+    "enabled": true
+  }
+]
