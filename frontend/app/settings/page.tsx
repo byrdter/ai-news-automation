@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { 
   Settings,
   Bell,
@@ -25,6 +26,7 @@ import {
 
 export default function SettingsPage() {
   return (
+    <DashboardLayout>
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
@@ -412,5 +414,6 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+    </DashboardLayout>
   )
 }

@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { CostChart } from '@/components/analytics/CostChart'
 import { SourceChart } from '@/components/analytics/SourceChart'
 import { VolumeChart } from '@/components/analytics/VolumeChart'
@@ -20,6 +21,7 @@ import { formatCurrency, formatNumber } from '@/lib/utils'
 
 export default function AnalyticsPage() {
   return (
+    <DashboardLayout>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -255,5 +257,6 @@ export default function AnalyticsPage() {
         </Card>
       </div>
     </div>
+    </DashboardLayout>
   )
 }

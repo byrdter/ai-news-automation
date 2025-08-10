@@ -165,7 +165,8 @@ def is_cache_valid(cache_entry: CacheEntry) -> bool:
 # ============================================================================
 
 async def fetch_single_rss_feed(source: RSSSourceConfig, 
-                               max_articles: Optional[int] = None) -> FeedFetchResult:
+                               max_articles: Optional[int] = None,
+                               force_refresh: bool = False) -> FeedFetchResult:
     """Fetch and process a single RSS feed"""
     start_time = time.time()
     result = FeedFetchResult(
@@ -176,14 +177,17 @@ async def fetch_single_rss_feed(source: RSSSourceConfig,
     )
     
     try:
-        # Check cache first
-        cache_key = get_cache_key(source.name)
-        if cache_key in _cache and is_cache_valid(_cache[cache_key]):
-            cached_result = _cache[cache_key]
-            cached_result.access()
-            logger.info(f"Cache hit for {source.name}")
-            _stats.cache_hit_rate = (_stats.cache_hit_rate + 1.0) / 2  # Simple moving average
-            return cached_result.feed_result
+        # Check cache first (skip if force_refresh is True)
+        if not force_refresh:
+            cache_key = get_cache_key(source.name)
+            if cache_key in _cache and is_cache_valid(_cache[cache_key]):
+                cached_result = _cache[cache_key]
+                cached_result.access()
+                logger.info(f"Cache hit for {source.name}")
+                _stats.cache_hit_rate = (_stats.cache_hit_rate + 1.0) / 2  # Simple moving average
+                return cached_result.feed_result
+        else:
+            logger.info(f"Force refresh requested for {source.name}, bypassing cache")
         
         # Apply rate limiting
         await asyncio.sleep(source.rate_limit_delay)
@@ -323,6 +327,7 @@ async def fetch_single_rss_feed(source: RSSSourceConfig,
             result.articles_per_second = len(articles) / result.fetch_duration
         
         # Cache successful result
+        cache_key = get_cache_key(source.name)  # Get standard cache key for storage
         cache_entry = CacheEntry(
             cache_key=cache_key,
             expires_at=datetime.now(timezone.utc) + timedelta(seconds=source.fetch_interval),
@@ -585,7 +590,8 @@ async def fetch_all_sources(request: BatchFetchRequest) -> BatchFetchResult:
             async with semaphore:
                 return await fetch_single_rss_feed(
                     source, 
-                    max_articles=request.max_articles_per_source
+                    max_articles=request.max_articles_per_source,
+                    force_refresh=request.force_refresh
                 )
         
         # Execute fetches concurrently
@@ -652,11 +658,33 @@ async def fetch_all_sources(request: BatchFetchRequest) -> BatchFetchResult:
         _stats.unique_articles += result.new_articles
         _stats.filtered_articles += result.filtered_articles
         
+        # Save articles to database if requested
+        database_save_results = None
+        if request.save_to_database and all_articles:
+            try:
+                from daemon_database import DaemonDatabase
+                logger.info(f"Saving {len(all_articles)} articles to database...")
+                database_save_results = DaemonDatabase.save_rss_articles(all_articles)
+                logger.info(f"Database save results: {database_save_results}")
+            except Exception as e:
+                logger.error(f"Failed to save articles to database: {e}")
+                database_save_results = {"error": str(e)}
+        
+        # Add database results to the batch result
+        if database_save_results:
+            result.database_save_results = database_save_results
+        
         logger.info(
             f"Batch fetch completed: {result.total_articles} articles, "
             f"{result.new_articles} new, {result.duplicate_articles} duplicates, "
             f"{result.sources_successful}/{result.sources_attempted} sources successful"
         )
+        
+        if database_save_results and "error" not in database_save_results:
+            logger.info(
+                f"Database save: {database_save_results.get('saved', 0)} saved, "
+                f"{database_save_results.get('skipped', 0)} skipped"
+            )
         
         return result
         

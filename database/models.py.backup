@@ -1,0 +1,485 @@
+"""
+AI News Automation System - Database Models
+Location: database/models.py
+
+SQLAlchemy models with PostgreSQL + pgvector integration for semantic search.
+Supports Supabase deployment with proper indexing and relationships.
+"""
+
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional, Dict, Any
+from uuid import uuid4
+
+from sqlalchemy import (
+    Column, Integer, String, Text, DateTime, Boolean, Float, 
+    JSON, ForeignKey, Index, UniqueConstraint, CheckConstraint,
+    event
+)
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, Session
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from pgvector.sqlalchemy import Vector
+
+# Base class for all models
+Base = declarative_base()
+
+class TimestampMixin:
+    """Mixin for created/updated timestamps with timezone awareness"""
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True), 
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+class NewsSource(Base, TimestampMixin):
+    """News sources configuration for RSS aggregation"""
+    __tablename__ = 'news_sources'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    
+    # Source identification
+    name = Column(String(255), nullable=False, unique=True)
+    url = Column(String(1000), nullable=False)
+    rss_feed_url = Column(String(1000))
+    
+    # Source classification (Tier 1=highest quality, 3=lowest)
+    tier = Column(Integer, nullable=False, default=2)
+    category = Column(String(100))  # 'AI Research', 'Industry News', 'Academic'
+    
+    # Configuration settings
+    active = Column(Boolean, default=True)
+    fetch_interval = Column(Integer, default=3600)  # seconds between fetches
+    max_articles_per_fetch = Column(Integer, default=50)
+    
+    # Monitoring and health tracking
+    last_fetched_at = Column(DateTime(timezone=True))
+    last_successful_fetch_at = Column(DateTime(timezone=True))
+    consecutive_failures = Column(Integer, default=0)
+    total_articles_fetched = Column(Integer, default=0)
+    
+    # Metadata and additional configuration
+    metadata_json = Column(JSON)  # Custom configuration per source
+    
+    # Relationships
+    articles = relationship("Article", back_populates="source", cascade="all, delete-orphan")
+    source_stats = relationship("SourceStatistics", back_populates="source", cascade="all, delete-orphan")
+    
+    # Constraints and validation
+    __table_args__ = (
+        CheckConstraint('tier >= 1 AND tier <= 3', name='valid_tier'),
+        CheckConstraint('fetch_interval >= 60', name='min_fetch_interval'),
+        CheckConstraint('max_articles_per_fetch >= 1', name='min_articles_fetch'),
+        Index('idx_news_sources_active_tier', 'active', 'tier'),
+        Index('idx_news_sources_category', 'category'),
+    )
+
+    def __repr__(self):
+        return f"<NewsSource(name='{self.name}', tier={self.tier}, active={self.active})>"
+
+class Article(Base, TimestampMixin):
+    """Articles with vector embeddings for semantic search"""
+    __tablename__ = 'articles'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    
+    # Basic article information
+    title = Column(String(500), nullable=False)
+    url = Column(String(1000), nullable=False, unique=True)
+    content = Column(Text)
+    summary = Column(Text)
+    
+    # Source relationship
+    source_id = Column(UUID(as_uuid=True), ForeignKey('news_sources.id'), nullable=False)
+    source = relationship("NewsSource", back_populates="articles")
+    
+    # Publication metadata
+    published_at = Column(DateTime(timezone=True))
+    author = Column(String(255))
+    word_count = Column(Integer)
+    
+    # Processing status and errors
+    processed = Column(Boolean, default=False)
+    processing_stage = Column(String(50))  # 'discovered', 'analyzed', 'summarized'
+    processing_errors = Column(JSON)  # Array of error messages
+    
+    # AI analysis results
+    relevance_score = Column(Float, default=0.0)  # 0.0 to 1.0
+    sentiment_score = Column(Float, default=0.0)  # -1.0 to 1.0
+    quality_score = Column(Float, default=0.0)    # 0.0 to 1.0
+    urgency_score = Column(Float, default=0.0)    # 0.0 to 1.0 for alerts
+    
+    # Categories and entities (AI-extracted)
+    categories = Column(ARRAY(String(100)))  # ["AI Research", "GPT", "OpenAI"]
+    entities = Column(JSON)  # Named entities: {"companies": ["OpenAI"], "people": ["Sam Altman"]}
+    keywords = Column(ARRAY(String(100)))  # Key terms for search
+    topics = Column(ARRAY(String(100)))    # Topic classifications
+    
+    # Vector embeddings for semantic search (768d for Cohere or 1536d for OpenAI)
+    title_embedding = Column(Vector(768))    # Title semantic embedding
+    content_embedding = Column(Vector(768))  # Full content embedding
+    
+    # Engagement and metrics
+    view_count = Column(Integer, default=0)
+    share_count = Column(Integer, default=0)
+    external_engagement = Column(JSON)  # Social media metrics when available
+    
+    # Duplicate detection and content validation
+    content_hash = Column(String(64), index=True)  # SHA-256 of normalized content
+    duplicate_of_id = Column(UUID(as_uuid=True), ForeignKey('articles.id'))
+    duplicate_of = relationship("Article", remote_side=[id])
+    
+    # Analysis metadata
+    analysis_model = Column(String(100))  # Model used for analysis
+    analysis_cost_usd = Column(Float, default=0.0)  # Cost tracking
+    analysis_timestamp = Column(DateTime(timezone=True))
+    
+    # Relationships
+    reports = relationship("ReportArticle", back_populates="article")
+    alerts = relationship("Alert", back_populates="article")
+    
+    # ✅ FIXED: Performance indexes with proper vector operator classes
+    __table_args__ = (
+        Index('idx_articles_source_published', 'source_id', 'published_at'),
+        Index('idx_articles_processed_relevance', 'processed', 'relevance_score'),
+        Index('idx_articles_content_hash', 'content_hash'),
+        Index('idx_articles_categories', 'categories', postgresql_using='gin'),
+        Index('idx_articles_keywords', 'keywords', postgresql_using='gin'),
+        Index('idx_articles_published_at', 'published_at'),
+        Index('idx_articles_urgency_score', 'urgency_score'),
+        # ✅ FIXED: Vector similarity indexes with proper operator class specification
+        Index('idx_articles_title_embedding', 'title_embedding', 
+              postgresql_using='hnsw', 
+              postgresql_with={'m': 16, 'ef_construction': 64},
+              postgresql_ops={'title_embedding': 'vector_cosine_ops'}),
+        Index('idx_articles_content_embedding', 'content_embedding',
+              postgresql_using='hnsw', 
+              postgresql_with={'m': 16, 'ef_construction': 64},
+              postgresql_ops={'content_embedding': 'vector_cosine_ops'}),
+    )
+
+    def __repr__(self):
+        return f"<Article(title='{self.title[:50]}...', relevance={self.relevance_score})>"
+
+class Report(Base, TimestampMixin):
+    """Generated reports (daily, weekly, monthly)"""
+    __tablename__ = 'reports'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    
+    # Report metadata
+    report_type = Column(String(50), nullable=False)  # 'daily', 'weekly', 'monthly'
+    report_date = Column(DateTime(timezone=True), nullable=False)  # Date the report covers
+    title = Column(String(500), nullable=False)
+    
+    # Report content structure
+    executive_summary = Column(Text)
+    key_highlights = Column(JSON)     # Array of key points
+    trend_analysis = Column(Text)
+    category_breakdown = Column(JSON) # Statistics by category
+    full_content = Column(Text)       # Complete report content
+    
+    # Generation metadata
+    generation_model = Column(String(100))  # Model used for generation
+    generation_cost_usd = Column(Float, default=0.0)
+    generation_duration = Column(Float)  # seconds
+    template_version = Column(String(50))
+    
+    # Status and delivery
+    status = Column(String(50), default='draft')  # 'draft', 'published', 'delivered', 'archived'
+    delivery_status = Column(String(50))  # 'pending', 'sent', 'delivered', 'failed'
+    delivery_attempts = Column(Integer, default=0)
+    delivered_at = Column(DateTime(timezone=True))
+    
+    # Quality metrics
+    article_count = Column(Integer, default=0)
+    avg_relevance_score = Column(Float)
+    coverage_completeness = Column(Float)  # How well report covers the period
+    
+    # Recipients and delivery
+    recipients = Column(ARRAY(String(255)))
+    email_subject = Column(String(500))
+    
+    # Relationships
+    report_articles = relationship("ReportArticle", back_populates="report", cascade="all, delete-orphan")
+    
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint('report_type', 'report_date', name='unique_report_per_date'),
+        Index('idx_reports_type_date', 'report_type', 'report_date'),
+        Index('idx_reports_status', 'status'),
+    )
+
+    def __repr__(self):
+        return f"<Report(type='{self.report_type}', date='{self.report_date}', status='{self.status}')>"
+
+class ReportArticle(Base):
+    """Many-to-many relationship between reports and articles"""
+    __tablename__ = 'report_articles'
+    
+    report_id = Column(UUID(as_uuid=True), ForeignKey('reports.id'), primary_key=True)
+    article_id = Column(UUID(as_uuid=True), ForeignKey('articles.id'), primary_key=True)
+    
+    # Article's role in the report
+    section = Column(String(100))  # 'breaking_news', 'key_developments', 'trends', 'research'
+    importance_score = Column(Float, default=0.5)  # 0.0 to 1.0
+    summary_snippet = Column(Text)  # Custom summary for this report
+    position_in_section = Column(Integer)  # Order within section
+    
+    # Relationships
+    report = relationship("Report", back_populates="report_articles")
+    article = relationship("Article", back_populates="reports")
+
+class Alert(Base, TimestampMixin):
+    """Breaking news alerts for urgent developments"""
+    __tablename__ = 'alerts'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    
+    # Alert content
+    title = Column(String(500), nullable=False)
+    message = Column(Text, nullable=False)
+    alert_type = Column(String(50))  # 'breaking_news', 'major_funding', 'product_launch'
+    urgency_level = Column(String(20), default='medium')  # 'low', 'medium', 'high', 'critical'
+    urgency_score = Column(Float)  # Numerical urgency for sorting
+    
+    # Source article
+    article_id = Column(UUID(as_uuid=True), ForeignKey('articles.id'))
+    article = relationship("Article", back_populates="alerts")
+    
+    # Alert trigger information
+    triggered_by_rules = Column(JSON)  # Rules that caused this alert
+    trigger_keywords = Column(ARRAY(String(100)))
+    trigger_entities = Column(JSON)
+    
+    # Delivery tracking
+    delivery_status = Column(String(50), default='pending')  # 'pending', 'sent', 'delivered', 'failed'
+    delivery_method = Column(String(50))  # 'email', 'webhook', 'slack'
+    delivery_attempts = Column(Integer, default=0)
+    sent_at = Column(DateTime(timezone=True))
+    delivered_at = Column(DateTime(timezone=True))
+    
+    # Alert throttling and deduplication
+    is_throttled = Column(Boolean, default=False)
+    similar_alert_id = Column(UUID(as_uuid=True), ForeignKey('alerts.id'))
+    alert_group = Column(String(100))  # Group similar alerts
+    
+    __table_args__ = (
+        Index('idx_alerts_urgency_sent', 'urgency_level', 'sent_at'),
+        Index('idx_alerts_delivery_status', 'delivery_status'),
+        Index('idx_alerts_article_id', 'article_id'),
+    )
+
+class SourceStatistics(Base, TimestampMixin):
+    """Daily statistics for news sources performance tracking"""
+    __tablename__ = 'source_statistics'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    
+    # Source and time period
+    source_id = Column(UUID(as_uuid=True), ForeignKey('news_sources.id'), nullable=False)
+    date = Column(DateTime(timezone=True), nullable=False)
+    
+    # Fetch statistics
+    articles_fetched = Column(Integer, default=0)
+    articles_processed = Column(Integer, default=0)
+    articles_relevant = Column(Integer, default=0)  # Above relevance threshold
+    articles_included_in_reports = Column(Integer, default=0)
+    
+    # Quality metrics
+    avg_relevance_score = Column(Float)
+    avg_quality_score = Column(Float)
+    avg_word_count = Column(Float)
+    
+    # Performance metrics
+    fetch_duration = Column(Float)      # seconds to fetch RSS
+    processing_duration = Column(Float) # seconds to process articles
+    error_count = Column(Integer, default=0)
+    error_types = Column(JSON)  # Categorized errors
+    
+    # Cost tracking
+    processing_cost_usd = Column(Float, default=0.0)
+    
+    # Relationships
+    source = relationship("NewsSource", back_populates="source_stats")
+    
+    __table_args__ = (
+        UniqueConstraint('source_id', 'date', name='unique_source_date_stats'),
+        Index('idx_source_stats_date', 'date'),
+        Index('idx_source_stats_source_id', 'source_id'),
+    )
+
+class SystemMetrics(Base, TimestampMixin):
+    """System-wide performance and cost metrics"""
+    __tablename__ = 'system_metrics'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    
+    # Timestamp (minute-level granularity)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
+    
+    # Processing performance metrics
+    articles_processed_per_minute = Column(Integer)
+    avg_processing_time = Column(Float)  # seconds per article
+    pipeline_success_rate = Column(Float)  # 0.0 to 1.0
+    
+    # Agent performance
+    agent_response_times = Column(JSON)  # Response times by agent
+    agent_success_rates = Column(JSON)   # Success rates by agent
+    active_agents = Column(Integer)
+    
+    # API and cost metrics
+    llm_api_calls = Column(Integer)
+    total_tokens_used = Column(Integer)
+    tokens_by_model = Column(JSON)  # Token usage breakdown by model
+    estimated_cost_usd = Column(Float, default=0.0)
+    daily_cost_usd = Column(Float)
+    monthly_cost_usd = Column(Float)
+    
+    # System health
+    mcp_server_status = Column(JSON)  # Status of each MCP server
+    database_connection_pool = Column(JSON)
+    error_rate = Column(Float, default=0.0)  # Errors per minute
+    
+    # Resource usage
+    cpu_usage_percent = Column(Float)
+    memory_usage_mb = Column(Float)
+    disk_usage_mb = Column(Float)
+    
+    # Workflow performance
+    workflow_completion_times = Column(JSON)
+    workflow_success_rates = Column(JSON)
+    
+    __table_args__ = (
+        Index('idx_system_metrics_timestamp', 'timestamp'),
+        Index('idx_system_metrics_cost', 'daily_cost_usd', 'monthly_cost_usd'),
+    )
+
+class CostTracking(Base, TimestampMixin):
+    """Detailed cost tracking for API usage and operations"""
+    __tablename__ = 'cost_tracking'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    
+    # Operation details
+    operation_type = Column(String(100), nullable=False)  # 'content_analysis', 'embedding_generation', 'report_generation'
+    operation_id = Column(String(100))  # Reference to specific operation
+    
+    # Service provider details
+    provider = Column(String(50), nullable=False)  # 'openai', 'anthropic', 'cohere'
+    model_name = Column(String(100), nullable=False)
+    api_endpoint = Column(String(200))
+    
+    # Usage metrics
+    input_tokens = Column(Integer, default=0)
+    output_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    request_count = Column(Integer, default=1)
+    
+    # Cost breakdown
+    input_cost_per_token = Column(Float)    # Cost per input token
+    output_cost_per_token = Column(Float)   # Cost per output token
+    base_cost = Column(Float, default=0.0)  # Base operation cost
+    total_cost_usd = Column(Float, nullable=False)
+    
+    # Context and metadata
+    article_id = Column(UUID(as_uuid=True), ForeignKey('articles.id'))
+    report_id = Column(UUID(as_uuid=True), ForeignKey('reports.id'))
+    user_id = Column(String(100))  # For multi-user systems
+    session_id = Column(String(100))  # Operation grouping
+    
+    # Performance metrics
+    response_time_ms = Column(Integer)  # API response time
+    success = Column(Boolean, default=True)
+    error_message = Column(Text)
+    
+    __table_args__ = (
+        Index('idx_cost_tracking_provider_model', 'provider', 'model_name'),
+        Index('idx_cost_tracking_operation', 'operation_type', 'created_at'),
+        Index('idx_cost_tracking_daily_costs', 'created_at', 'total_cost_usd'),
+    )
+
+# Utility functions for database operations
+class DatabaseService:
+    """Service class for common database operations"""
+    
+    def __init__(self, session: Session):
+        self.session = session
+    
+    def create_article_with_embedding(self, article_data: Dict[str, Any], 
+                                    title_embedding: List[float], 
+                                    content_embedding: List[float]) -> Article:
+        """Create article with vector embeddings"""
+        article = Article(
+            **article_data,
+            title_embedding=title_embedding,
+            content_embedding=content_embedding
+        )
+        self.session.add(article)
+        self.session.commit()
+        return article
+    
+    def find_similar_articles(self, query_embedding: List[float], 
+                            limit: int = 10, 
+                            similarity_threshold: float = 0.8) -> List[Article]:
+        """Find articles similar to query embedding"""
+        # Using pgvector cosine similarity
+        return (
+            self.session.query(Article)
+            .filter(Article.processed == True)
+            .order_by(Article.content_embedding.cosine_distance(query_embedding))
+            .limit(limit)
+            .all()
+        )
+    
+    def get_articles_for_report(self, start_date: datetime, 
+                              end_date: datetime,
+                              min_relevance: float = 0.7) -> List[Article]:
+        """Get articles for report generation"""
+        return (
+            self.session.query(Article)
+            .filter(
+                Article.published_at.between(start_date, end_date),
+                Article.relevance_score >= min_relevance,
+                Article.processed == True
+            )
+            .order_by(Article.relevance_score.desc())
+            .all()
+        )
+    
+    def get_source_performance(self, days: int = 7) -> Dict[str, Any]:
+        """Get source performance metrics"""
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        
+        results = (
+            self.session.query(NewsSource, SourceStatistics)
+            .join(SourceStatistics)
+            .filter(SourceStatistics.date >= cutoff_date)
+            .all()
+        )
+        
+        return {
+            'sources_analyzed': len(set([r[0].id for r in results])),
+            'total_articles_fetched': sum([r[1].articles_fetched for r in results]),
+            'avg_relevance_score': sum([r[1].avg_relevance_score or 0 for r in results]) / len(results) if results else 0,
+            'total_cost_usd': sum([r[1].processing_cost_usd for r in results])
+        }
+    
+    def record_cost(self, operation_type: str, provider: str, model_name: str,
+                   input_tokens: int, output_tokens: int, cost_usd: float,
+                   article_id: Optional[str] = None, report_id: Optional[str] = None) -> CostTracking:
+        """Record API cost tracking"""
+        cost_entry = CostTracking(
+            operation_type=operation_type,
+            provider=provider,
+            model_name=model_name,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
+            total_cost_usd=cost_usd,
+            article_id=article_id,
+            report_id=report_id
+        )
+        self.session.add(cost_entry)
+        self.session.commit()
+        return cost_entry

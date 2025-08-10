@@ -7,7 +7,7 @@ Provides database operations for the automation daemon.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 from sqlalchemy import create_engine, select, and_, or_, desc, func
 from sqlalchemy.orm import sessionmaker, selectinload
@@ -52,31 +52,37 @@ class DaemonDatabase:
             with DaemonDatabase._get_session() as session:
                 # Get all sources for mapping
                 sources = session.query(NewsSource).all()
-                source_url_map = {source.rss_url: source for source in sources if source.rss_url}
+                source_url_map = {source.rss_feed_url: source for source in sources if source.rss_feed_url}
                 source_name_map = {source.name.lower(): source for source in sources}
                 
                 for rss_article in rss_articles:
                     try:
-                        # Find matching source
-                        source = source_url_map.get(rss_article.source_url)
+                        # Find matching source by name first
+                        source = source_name_map.get(rss_article.source_name.lower())
                         if not source:
-                            # Try mapping by source name
-                            source = source_name_map.get(rss_article.source_name.lower())
+                            # Try finding by partial URL match if available
+                            for src in sources:
+                                if hasattr(src, 'rss_feed_url') and src.rss_feed_url and str(rss_article.url) in str(src.rss_feed_url):
+                                    source = src
+                                    break
                         
                         if not source:
                             logger.warning(f"No database source found for: {rss_article.source_name}")
                             results['unmapped'] += 1
                             continue
                         
+                        # Convert HttpUrl to string for database storage
+                        article_url = str(rss_article.url)
+                        
                         # Check if article already exists
                         existing = session.query(Article).filter(
                             and_(
                                 Article.source_id == source.id,
                                 or_(
-                                    Article.url == rss_article.link,
+                                    Article.url == article_url,
                                     and_(
                                         Article.title == rss_article.title,
-                                        Article.published_at == rss_article.published
+                                        Article.published_at == rss_article.published_date
                                     )
                                 )
                             )
@@ -86,21 +92,33 @@ class DaemonDatabase:
                             results['skipped'] += 1
                             continue
                         
-                        # Create new article
+                        # Prepare published date with timezone handling
+                        published_at = rss_article.published_date
+                        if published_at and published_at.tzinfo is None:
+                            published_at = published_at.replace(tzinfo=timezone.utc)
+                        
+                        # Create new article with proper field mapping
                         article = Article(
                             title=rss_article.title[:500] if rss_article.title else "Untitled",
-                            url=rss_article.link,
-                            content=rss_article.description,
-                            summary=rss_article.summary or (rss_article.description[:500] if rss_article.description else None),
-                            author=rss_article.author,
-                            published_at=rss_article.published,
-                            fetched_at=datetime.utcnow(),
+                            url=article_url,
+                            content=rss_article.content or rss_article.description,
+                            summary=rss_article.description[:2000] if rss_article.description else None,
+                            author=rss_article.author[:255] if rss_article.author else None,
+                            published_at=published_at or datetime.now(timezone.utc),
                             source_id=source.id,
-                            # Set defaults for analysis fields
-                            relevance_score=0.0,
+                            word_count=rss_article.word_count or 0,
+                            content_hash=rss_article.content_hash[:64] if rss_article.content_hash else None,
+                            # Map RSS categories and topics
+                            categories=rss_article.categories[:5] if rss_article.categories else None,
+                            keywords=rss_article.categories[:10] if rss_article.categories else None,
+                            # Set processing status
+                            processed=False,
+                            processing_stage='discovered',
+                            # Set analysis defaults (will be updated by content analysis)
+                            relevance_score=rss_article.relevance_score or 0.0,
                             quality_score=0.0,
                             sentiment_score=0.0,
-                            is_analyzed=False
+                            urgency_score=0.0
                         )
                         
                         session.add(article)

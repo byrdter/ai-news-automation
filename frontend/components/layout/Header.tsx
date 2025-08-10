@@ -1,14 +1,45 @@
 'use client'
 
+import { useState } from 'react'
 import { Bell, Search, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useRouter } from 'next/navigation'
 
 interface HeaderProps {
   onMenuClick?: () => void
 }
 
 export function Header({ onMenuClick }: HeaderProps) {
+  const [globalSearch, setGlobalSearch] = useState('')
+  const router = useRouter()
+
+  const handleGlobalSearch = (query: string) => {
+    setGlobalSearch(query)
+    
+    if (query.trim()) {
+      // Navigate to articles page if not already there
+      router.push('/articles')
+      
+      // Dispatch search event for ArticleList to handle
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('searchResults', {
+          detail: {
+            type: 'text',
+            query: query,
+            results: []
+          }
+        }))
+      }, 100)
+    }
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleGlobalSearch(globalSearch)
+    }
+  }
+
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4">
       <div className="flex items-center justify-between">
@@ -39,6 +70,9 @@ export function Header({ onMenuClick }: HeaderProps) {
             <Input
               placeholder="Search articles, reports..."
               className="pl-10 w-64"
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              onKeyPress={handleKeyPress}
             />
           </div>
 

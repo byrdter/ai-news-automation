@@ -1,0 +1,769 @@
+"""
+Content Analysis Agent using Pydantic AI and Cohere.
+
+Performs deep content analysis, entity extraction, sentiment analysis,
+and impact assessment for AI news content.
+"""
+
+import asyncio
+import time
+import re
+from datetime import datetime
+from typing import List, Dict, Any, Optional, Tuple
+import logging
+from collections import Counter
+
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.models import OpenAIModel
+from pydantic import BaseModel, Field
+import cohere
+
+from config.settings import get_settings
+from .models import (
+    AnalysisRequest, AnalysisResponse, ContentAnalysis, BatchAnalysisRequest,
+    BatchAnalysisResponse, Entity, Topic, EntityType, SentimentType,
+    ImpactLevel, AnalysisStatus, ContentType
+)
+from utils.cost_tracking import CostTracker, ServiceType
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class ContentAnalysisDeps(BaseModel):
+    """Dependencies for Content Analysis Agent."""
+    cohere_client: cohere.Client
+    cost_tracker: CostTracker
+    settings: Any
+
+
+class DetailedAnalysis(BaseModel):
+    """Detailed AI analysis results."""
+    relevance_score: float = Field(..., ge=0.0, le=1.0)
+    quality_score: float = Field(..., ge=0.0, le=1.0)
+    sentiment_score: float = Field(..., ge=-1.0, le=1.0)
+    impact_level: ImpactLevel
+    urgency_score: float = Field(..., ge=0.0, le=1.0)
+    novelty_score: float = Field(..., ge=0.0, le=1.0)
+    primary_category: str
+    secondary_categories: List[str]
+    ai_domains: List[str]
+    key_entities: List[str]
+    key_topics: List[str]
+    technical_terms: List[str]
+    key_findings: List[str]
+    market_impact: str
+    analysis_reasoning: str
+    is_breaking_news: bool
+
+
+# Create Content Analysis Agent using Cohere
+content_analysis_agent = Agent(
+    'openai:gpt-4o-mini',  # For structured output, then use Cohere for heavy lifting
+    deps_type=ContentAnalysisDeps,
+    result_type=DetailedAnalysis,
+    system_prompt="""You are an AI Content Analysis Agent specialized in analyzing AI and technology news content.
+
+Your role is to provide comprehensive analysis including:
+
+RELEVANCE ASSESSMENT (0.0-1.0):
+- 0.9-1.0: Major AI breakthroughs, significant company announcements, regulatory changes
+- 0.7-0.8: Important research papers, product launches, funding announcements
+- 0.5-0.6: Industry analysis, educational content, minor product updates
+- 0.3-0.4: Tangentially related tech news, broad market trends
+- 0.0-0.2: Not AI-related or very low relevance
+
+QUALITY EVALUATION (0.0-1.0):
+- Technical accuracy and depth
+- Source credibility and expertise
+- Supporting data and evidence
+- Writing clarity and structure
+- Novelty of information
+
+SENTIMENT ANALYSIS (-1.0 to 1.0):
+- Positive: Optimistic about AI progress, benefits, opportunities
+- Neutral: Balanced reporting, factual presentation
+- Negative: Concerns, risks, criticism, setbacks
+
+IMPACT ASSESSMENT:
+- BREAKTHROUGH: Paradigm-shifting developments (GPT-4 release, major regulatory changes)
+- MAJOR: Significant industry developments (large funding, key partnerships)
+- SIGNIFICANT: Important but expected developments (quarterly results, product updates)
+- MODERATE: Noteworthy but limited impact (research papers, minor announcements)
+- MINOR: Limited impact or relevance
+
+ENTITY EXTRACTION:
+Focus on: Companies, People, Products, Technologies, Research Areas, Funding, Metrics, Locations
+
+CATEGORIZATION:
+Primary categories: Research, Industry News, Product Launch, Funding, Regulation, Analysis
+AI domains: NLP, Computer Vision, Robotics, ML Infrastructure, Ethics, etc.
+
+Always provide clear reasoning for your assessments and identify specific evidence from the content."""
+)
+
+
+class ContentAnalysisService:
+    """Service class for content analysis operations."""
+    
+    def __init__(self):
+        """Initialize content analysis service."""
+        self.settings = get_settings()
+        self.cohere_client = cohere.Client(self.settings.llm.cohere_api_key.get_secret_value())
+        self.cost_tracker = CostTracker()
+        
+        # Analysis cache to avoid duplicate processing
+        self.analysis_cache = {}
+        
+        # Pre-compiled regex patterns for entity extraction
+        self.entity_patterns = {
+            EntityType.ORGANIZATION: [
+                r'\b(?:OpenAI|Google|Microsoft|Amazon|Meta|Apple|Tesla|NVIDIA|Intel|IBM|Oracle|Salesforce)\b',
+                r'\b[A-Z][A-Za-z]+ (?:Inc|Corp|LLC|Ltd|Technologies|Systems|Labs|Research|AI|ML)\b',
+            ],
+            EntityType.PERSON: [
+                r'\b(?:Sam Altman|Elon Musk|Sundar Pichai|Satya Nadella|Mark Zuckerberg|Jensen Huang)\b',
+                r'\b[A-Z][a-z]+ [A-Z][a-z]+(?:\s[A-Z][a-z]+)*\b(?=\s(?:said|stated|announced|explained|told|CEO|CTO|founder|researcher))',
+            ],
+            EntityType.PRODUCT: [
+                r'\b(?:ChatGPT|GPT-4|Claude|Gemini|DALL-E|Midjourney|Stable Diffusion|LaMDA|PaLM|Codex)\b',
+                r'\b[A-Z][A-Za-z]*(?:\s[A-Z0-9][A-Za-z0-9]*)*(?:\s(?:AI|ML|API|SDK|Platform|Model|System))\b',
+            ],
+            EntityType.TECHNOLOGY: [
+                r'\b(?:artificial intelligence|machine learning|deep learning|neural networks|transformers|LLM|large language model)\b',
+                r'\b(?:computer vision|natural language processing|reinforcement learning|generative AI|AGI)\b',
+            ],
+            EntityType.FUNDING: [
+                r'\$[\d,.]+\s*(?:million|billion|M|B)\b',
+                r'(?:Series [A-Z]|seed funding|pre-seed|IPO|valuation|investment)\b',
+            ],
+            EntityType.METRIC: [
+                r'\b\d+(?:\.\d+)?%\b',
+                r'\b\d+(?:,\d{3})*(?:\.\d+)?\s*(?:tokens|parameters|FLOPS|users|customers|employees)\b',
+            ]
+        }
+    
+    async def analyze_content(self, request: AnalysisRequest) -> AnalysisResponse:
+        """Analyze content using AI models."""
+        start_time = time.time()
+        analysis_cost = 0.0
+        
+        try:
+            logger.info(f"Starting content analysis for {len(request.content)} characters")
+            
+            # Check cache first
+            content_hash = hash(request.content)
+            if content_hash in self.analysis_cache:
+                logger.info("Using cached analysis result")
+                cached_result = self.analysis_cache[content_hash]
+                return AnalysisResponse(
+                    success=True,
+                    analysis=cached_result,
+                    processing_time=time.time() - start_time,
+                    analysis_cost=0.0,  # Cached, no cost
+                    model_used="cached",
+                    confidence_score=cached_result.confidence_score,
+                    completeness=1.0
+                )
+            
+            # Initialize analysis object
+            analysis = ContentAnalysis(
+                content=request.content,
+                content_type=request.content_type,
+                content_id=request.content_id,
+                status=AnalysisStatus.ANALYZING,
+                analysis_model=self.settings.llm.cohere_model
+            )
+            
+            # Basic content metrics
+            analysis.word_count = len(request.content.split())
+            analysis.sentence_count = len(re.split(r'[.!?]+', request.content))
+            analysis.paragraph_count = len(request.content.split('\n\n'))
+            analysis.readability_score = self._calculate_readability(request.content)
+            
+            # Extract entities using regex and NER
+            if request.extract_entities:
+                entities = await self._extract_entities(request.content, request.max_entities, request.min_entity_confidence)
+                analysis.entities = entities
+                analysis_cost += 0.005  # Estimated cost for entity extraction
+            
+            # Get detailed AI analysis
+            detailed_analysis = await self._get_ai_analysis(
+                request.content,
+                analysis.entities,
+                request
+            )
+            
+            # Apply AI analysis results
+            analysis.relevance_score = detailed_analysis.relevance_score
+            analysis.quality_score = detailed_analysis.quality_score
+            analysis.sentiment_score = detailed_analysis.sentiment_score
+            analysis.impact_level = detailed_analysis.impact_level
+            analysis.urgency_score = detailed_analysis.urgency_score
+            analysis.novelty_score = detailed_analysis.novelty_score
+            analysis.primary_category = detailed_analysis.primary_category
+            analysis.secondary_categories = detailed_analysis.secondary_categories
+            analysis.ai_domains = detailed_analysis.ai_domains
+            analysis.key_findings = detailed_analysis.key_findings
+            analysis.market_impact = detailed_analysis.market_impact
+            analysis.analysis_reasoning = detailed_analysis.analysis_reasoning
+            
+            # Set sentiment type based on score
+            analysis.sentiment_type = self._score_to_sentiment_type(detailed_analysis.sentiment_score)
+            
+            # Extract topics if requested
+            if request.identify_topics:
+                topics = await self._extract_topics(
+                    request.content,
+                    detailed_analysis.key_topics,
+                    request.max_topics,
+                    request.min_topic_relevance
+                )
+                analysis.topics = topics
+            
+            # Set technical terms and key phrases
+            analysis.technical_terms = detailed_analysis.technical_terms[:20]
+            analysis.key_phrases = self._extract_key_phrases(request.content)[:15]
+            
+            # Research classification
+            if request.extract_research_info:
+                analysis.is_research_paper = self._is_research_paper(request.content)
+                if analysis.is_research_paper:
+                    analysis.research_type = self._classify_research_type(request.content)
+                    analysis.methodology = self._extract_methodology(request.content)
+            
+            # Content quality indicators
+            analysis.has_data_charts = bool(re.search(r'\b(?:chart|graph|figure|table|data)\b', request.content.lower()))
+            analysis.has_expert_quotes = bool(re.search(r'(?:"[^"]{20,}"|said|stated|explained|according to)', request.content))
+            analysis.source_credibility = self._assess_source_credibility(request.content)
+            analysis.fact_density = self._calculate_fact_density(request.content)
+            
+            # Business relevance
+            analysis.investment_relevance = self._assess_investment_relevance(detailed_analysis)
+            analysis.competitive_implications = self._extract_competitive_implications(request.content)
+            
+            # Calculate impact score
+            analysis.impact_score = self._calculate_impact_score(analysis)
+            
+            # Final processing
+            analysis.status = AnalysisStatus.COMPLETED
+            analysis.analyzed_at = datetime.utcnow()
+            analysis.processing_time = time.time() - start_time
+            analysis.analysis_cost = analysis_cost
+            analysis.confidence_score = self._calculate_confidence_score(analysis)
+            
+            # Cache successful analysis
+            self.analysis_cache[content_hash] = analysis
+            
+            # Track costs
+            self.cost_tracker.track_operation(
+                operation="content_analysis",
+                service=ServiceType.COHERE,
+                model=self.settings.llm.cohere_model,
+                input_tokens=analysis.word_count * 1.3,  # Rough estimate
+                output_tokens=100,  # Estimated analysis tokens
+                cost_usd=analysis_cost
+            )
+            
+            logger.info(f"Content analysis completed: relevance={analysis.relevance_score:.2f}, quality={analysis.quality_score:.2f}")
+            
+            return AnalysisResponse(
+                success=True,
+                analysis=analysis,
+                processing_time=analysis.processing_time,
+                analysis_cost=analysis_cost,
+                model_used=analysis.analysis_model,
+                confidence_score=analysis.confidence_score,
+                completeness=self._calculate_completeness(analysis)
+            )
+            
+        except Exception as e:
+            logger.error(f"Content analysis failed: {e}")
+            
+            return AnalysisResponse(
+                success=False,
+                analysis=None,
+                error_message=str(e),
+                processing_time=time.time() - start_time,
+                analysis_cost=analysis_cost,
+                model_used=self.settings.llm.cohere_model,
+                confidence_score=0.0,
+                completeness=0.0
+            )
+    
+    async def _get_ai_analysis(self, content: str, entities: List[Entity], request: AnalysisRequest) -> DetailedAnalysis:
+        """Get comprehensive AI analysis using the agent."""
+        
+        # Prepare context for the AI agent
+        entity_summary = f"Extracted entities: {', '.join([e.text for e in entities[:10]])}" if entities else "No entities extracted"
+        
+        analysis_prompt = f"""
+Analyze this AI/technology content:
+
+CONTENT:
+{content[:2000]}...
+
+CONTEXT:
+- Content type: {request.content_type.value}
+- Word count: {len(content.split())}
+- {entity_summary}
+
+Provide comprehensive analysis covering all aspects mentioned in the system prompt.
+        """
+        
+        try:
+            # Create dependencies
+            deps = ContentAnalysisDeps(
+                cohere_client=self.cohere_client,
+                cost_tracker=self.cost_tracker,
+                settings=self.settings
+            )
+            
+            # Run AI analysis
+            result = await content_analysis_agent.run(analysis_prompt, deps=deps)
+            return result.data
+            
+        except Exception as e:
+            logger.warning(f"AI analysis failed, using fallback: {e}")
+            return self._fallback_analysis(content, entities)
+    
+    def _fallback_analysis(self, content: str, entities: List[Entity]) -> DetailedAnalysis:
+        """Fallback analysis using keyword-based methods."""
+        
+        content_lower = content.lower()
+        
+        # Simple relevance scoring
+        ai_keywords = [
+            'artificial intelligence', 'ai', 'machine learning', 'deep learning',
+            'neural network', 'gpt', 'llm', 'openai', 'google ai', 'transformer'
+        ]
+        relevance_score = min(1.0, sum(0.1 for keyword in ai_keywords if keyword in content_lower))
+        
+        # Basic quality assessment
+        quality_indicators = [
+            len(content) > 1000,  # Sufficient length
+            bool(entities),  # Has entities
+            'research' in content_lower or 'study' in content_lower,  # Research content
+            '$' in content or 'funding' in content_lower,  # Financial info
+            bool(re.search(r'\d+%|\d+\s*(?:million|billion)', content))  # Has metrics
+        ]
+        quality_score = sum(quality_indicators) * 0.15
+        
+        # Simple sentiment
+        positive_words = ['breakthrough', 'success', 'achievement', 'innovation', 'advance']
+        negative_words = ['concern', 'risk', 'problem', 'challenge', 'criticism']
+        
+        pos_count = sum(1 for word in positive_words if word in content_lower)
+        neg_count = sum(1 for word in negative_words if word in content_lower)
+        sentiment_score = (pos_count - neg_count) * 0.1
+        sentiment_score = max(-1.0, min(1.0, sentiment_score))
+        
+        return DetailedAnalysis(
+            relevance_score=relevance_score,
+            quality_score=quality_score,
+            sentiment_score=sentiment_score,
+            impact_level=ImpactLevel.MODERATE,
+            urgency_score=0.3,
+            novelty_score=0.3,
+            primary_category="AI News",
+            secondary_categories=["Technology"],
+            ai_domains=["General AI"],
+            key_entities=[e.text for e in entities[:10]],
+            key_topics=["artificial intelligence", "technology"],
+            technical_terms=["AI", "machine learning"],
+            key_findings=[],
+            market_impact="Moderate industry relevance",
+            analysis_reasoning="Fallback keyword-based analysis due to AI analysis failure",
+            is_breaking_news=False
+        )
+    
+    async def _extract_entities(self, content: str, max_entities: int, min_confidence: float) -> List[Entity]:
+        """Extract named entities using regex patterns and NER."""
+        entities = []
+        
+        # Use regex patterns for entity extraction
+        for entity_type, patterns in self.entity_patterns.items():
+            for pattern in patterns:
+                matches = re.finditer(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    entity = Entity(
+                        text=match.group(),
+                        entity_type=entity_type,
+                        confidence=0.8,  # Default confidence for regex matches
+                        start_pos=match.start(),
+                        end_pos=match.end(),
+                        canonical_form=match.group().strip()
+                    )
+                    entities.append(entity)
+        
+        # Remove duplicates and sort by confidence
+        seen = set()
+        unique_entities = []
+        for entity in entities:
+            key = (entity.text.lower(), entity.entity_type)
+            if key not in seen and entity.confidence >= min_confidence:
+                seen.add(key)
+                unique_entities.append(entity)
+        
+        return sorted(unique_entities, key=lambda e: e.confidence, reverse=True)[:max_entities]
+    
+    async def _extract_topics(self, content: str, ai_topics: List[str], max_topics: int, min_relevance: float) -> List[Topic]:
+        """Extract topics from content."""
+        topics = []
+        
+        # Use AI-identified topics as base
+        for topic_name in ai_topics:
+            relevance = min(1.0, content.lower().count(topic_name.lower()) * 0.1)
+            if relevance >= min_relevance:
+                topic = Topic(
+                    name=topic_name,
+                    relevance=relevance,
+                    keywords=[topic_name.lower()],
+                    category="AI Technology"
+                )
+                topics.append(topic)
+        
+        # Add common AI topics if found
+        ai_topic_keywords = {
+            "Natural Language Processing": ["nlp", "language model", "text", "chat"],
+            "Computer Vision": ["vision", "image", "visual", "recognition"],
+            "Machine Learning": ["ml", "training", "model", "algorithm"],
+            "Robotics": ["robot", "autonomous", "automation"],
+            "AI Ethics": ["ethics", "bias", "fairness", "responsible ai"],
+            "AI Infrastructure": ["infrastructure", "compute", "gpu", "cloud"],
+        }
+        
+        for topic_name, keywords in ai_topic_keywords.items():
+            keyword_count = sum(1 for keyword in keywords if keyword in content.lower())
+            if keyword_count > 0:
+                relevance = min(1.0, keyword_count * 0.2)
+                if relevance >= min_relevance and not any(t.name == topic_name for t in topics):
+                    topic = Topic(
+                        name=topic_name,
+                        relevance=relevance,
+                        keywords=keywords,
+                        category="AI Domain"
+                    )
+                    topics.append(topic)
+        
+        return sorted(topics, key=lambda t: t.relevance, reverse=True)[:max_topics]
+    
+    def _extract_key_phrases(self, content: str) -> List[str]:
+        """Extract key phrases from content."""
+        # Simple key phrase extraction using common patterns
+        phrases = []
+        
+        # Technical phrases
+        tech_patterns = [
+            r'\b(?:artificial intelligence|machine learning|deep learning|neural networks)\b',
+            r'\b(?:large language model|transformer architecture|generative AI)\b',
+            r'\b(?:computer vision|natural language processing|reinforcement learning)\b'
+        ]
+        
+        for pattern in tech_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            phrases.extend([match.lower() for match in matches])
+        
+        # Remove duplicates and return top phrases
+        return list(dict.fromkeys(phrases))
+    
+    def _calculate_readability(self, content: str) -> float:
+        """Calculate basic readability score."""
+        words = content.split()
+        sentences = re.split(r'[.!?]+', content)
+        
+        if not words or not sentences:
+            return 0.0
+        
+        avg_words_per_sentence = len(words) / len(sentences)
+        
+        # Simple readability metric (lower is more readable)
+        # Normalize to 0-1 scale where 1 is most readable
+        readability = max(0.0, min(1.0, 1.0 - (avg_words_per_sentence - 10) / 30))
+        
+        return readability
+    
+    def _score_to_sentiment_type(self, score: float) -> SentimentType:
+        """Convert sentiment score to sentiment type."""
+        if score >= 0.5:
+            return SentimentType.VERY_POSITIVE
+        elif score >= 0.1:
+            return SentimentType.POSITIVE
+        elif score <= -0.5:
+            return SentimentType.VERY_NEGATIVE
+        elif score <= -0.1:
+            return SentimentType.NEGATIVE
+        else:
+            return SentimentType.NEUTRAL
+    
+    def _is_research_paper(self, content: str) -> bool:
+        """Detect if content is a research paper."""
+        research_indicators = [
+            'abstract', 'methodology', 'results', 'conclusion',
+            'references', 'citation', 'arxiv', 'doi:',
+            'we propose', 'our method', 'experimental results'
+        ]
+        
+        content_lower = content.lower()
+        return sum(1 for indicator in research_indicators if indicator in content_lower) >= 3
+    
+    def _classify_research_type(self, content: str) -> str:
+        """Classify type of research."""
+        content_lower = content.lower()
+        
+        if 'empirical' in content_lower or 'experiment' in content_lower:
+            return "Empirical Research"
+        elif 'survey' in content_lower or 'review' in content_lower:
+            return "Survey/Review"
+        elif 'theoretical' in content_lower or 'theory' in content_lower:
+            return "Theoretical Research"
+        else:
+            return "Applied Research"
+    
+    def _extract_methodology(self, content: str) -> Optional[str]:
+        """Extract research methodology."""
+        method_patterns = [
+            r'(?:methodology|method|approach):\s*([^.]{50,200})',
+            r'we (?:use|employ|apply|implement)\s+([^.]{20,100})',
+            r'our (?:approach|method|technique)\s+(?:is|involves)\s+([^.]{20,100})'
+        ]
+        
+        for pattern in method_patterns:
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+        
+        return None
+    
+    def _assess_source_credibility(self, content: str) -> float:
+        """Assess source credibility based on content indicators."""
+        credibility_indicators = [
+            ('arxiv' in content.lower(), 0.2),
+            ('doi:' in content.lower(), 0.15),
+            ('university' in content.lower(), 0.15),
+            ('research' in content.lower(), 0.1),
+            ('published' in content.lower(), 0.1),
+            ('peer-reviewed' in content.lower(), 0.15),
+            (bool(re.search(r'\d{4}', content)), 0.05),  # Has year
+            (len(content) > 1000, 0.1)  # Substantial content
+        ]
+        
+        score = 0.5  # Base credibility
+        for indicator, weight in credibility_indicators:
+            if indicator:
+                score += weight
+        
+        return min(1.0, score)
+    
+    def _calculate_fact_density(self, content: str) -> float:
+        """Calculate density of factual information."""
+        fact_patterns = [
+            r'\d+(?:\.\d+)?%',  # Percentages
+            r'\$[\d,.]+(?:\s*(?:million|billion|M|B))?',  # Money
+            r'\d+(?:,\d{3})*\s*(?:users|customers|employees|parameters)',  # Metrics
+            r'\b\d{4}\b',  # Years
+            r'according to',  # Attribution
+            r'study (?:found|showed|revealed)',  # Research findings
+        ]
+        
+        fact_count = sum(len(re.findall(pattern, content, re.IGNORECASE)) for pattern in fact_patterns)
+        word_count = len(content.split())
+        
+        return min(1.0, fact_count / (word_count / 100)) if word_count > 0 else 0.0
+    
+    def _assess_investment_relevance(self, analysis: DetailedAnalysis) -> float:
+        """Assess investment relevance."""
+        relevance = 0.0
+        
+        # High relevance indicators
+        if 'funding' in analysis.market_impact.lower():
+            relevance += 0.3
+        if any('ipo' in cat.lower() or 'valuation' in cat.lower() for cat in analysis.secondary_categories):
+            relevance += 0.3
+        if analysis.impact_level in [ImpactLevel.BREAKTHROUGH, ImpactLevel.MAJOR]:
+            relevance += 0.2
+        if analysis.relevance_score > 0.8:
+            relevance += 0.2
+        
+        return min(1.0, relevance)
+    
+    def _extract_competitive_implications(self, content: str) -> List[str]:
+        """Extract competitive implications."""
+        implications = []
+        
+        competitive_patterns = [
+            r'(?:compete|competition|rival|challenger)\s+(?:with|against)\s+([^.]{10,50})',
+            r'(?:advantage|edge|lead)\s+over\s+([^.]{10,50})',
+            r'(?:market share|dominant|leader)\s+in\s+([^.]{10,50})'
+        ]
+        
+        for pattern in competitive_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            implications.extend(matches)
+        
+        return implications[:5]  # Limit to top 5
+    
+    def _calculate_impact_score(self, analysis: ContentAnalysis) -> float:
+        """Calculate overall impact score."""
+        weights = {
+            'relevance': 0.25,
+            'quality': 0.20,
+            'novelty': 0.20,
+            'urgency': 0.15,
+            'source_credibility': 0.10,
+            'fact_density': 0.10
+        }
+        
+        return (
+            weights['relevance'] * analysis.relevance_score +
+            weights['quality'] * analysis.quality_score +
+            weights['novelty'] * analysis.novelty_score +
+            weights['urgency'] * analysis.urgency_score +
+            weights['source_credibility'] * analysis.source_credibility +
+            weights['fact_density'] * analysis.fact_density
+        )
+    
+    def _calculate_confidence_score(self, analysis: ContentAnalysis) -> float:
+        """Calculate confidence in the analysis."""
+        confidence_factors = [
+            analysis.word_count > 500,  # Sufficient content
+            len(analysis.entities) > 3,  # Good entity extraction
+            len(analysis.topics) > 2,  # Topic identification
+            analysis.analysis_reasoning != "",  # Has reasoning
+            analysis.source_credibility > 0.6,  # Credible source
+        ]
+        
+        return sum(confidence_factors) * 0.2
+    
+    def _calculate_completeness(self, analysis: ContentAnalysis) -> float:
+        """Calculate analysis completeness."""
+        completeness_factors = [
+            analysis.relevance_score > 0,
+            analysis.quality_score > 0,
+            analysis.sentiment_score != 0,
+            len(analysis.entities) > 0,
+            len(analysis.topics) > 0,
+            analysis.primary_category != "",
+            analysis.analysis_reasoning != "",
+            len(analysis.key_phrases) > 0,
+        ]
+        
+        return sum(completeness_factors) / len(completeness_factors)
+
+
+# Global service instance
+_content_analysis_service: Optional[ContentAnalysisService] = None
+
+
+def get_content_analysis_service() -> ContentAnalysisService:
+    """Get global content analysis service instance."""
+    global _content_analysis_service
+    if _content_analysis_service is None:
+        _content_analysis_service = ContentAnalysisService()
+    return _content_analysis_service
+
+
+# Main entry points
+async def analyze_content(request: AnalysisRequest) -> AnalysisResponse:
+    """Analyze content using the Content Analysis Agent."""
+    service = get_content_analysis_service()
+    return await service.analyze_content(request)
+
+
+async def batch_analyze_content(request: BatchAnalysisRequest) -> BatchAnalysisResponse:
+    """Analyze multiple pieces of content in batch."""
+    service = get_content_analysis_service()
+    
+    start_time = time.time()
+    total_cost = 0.0
+    results = []
+    successful_analyses = 0
+    failed_analyses = 0
+    
+    # Process with concurrency control
+    semaphore = asyncio.Semaphore(request.max_concurrent)
+    
+    async def process_single_request(analysis_request: AnalysisRequest) -> AnalysisResponse:
+        async with semaphore:
+            result = await service.analyze_content(analysis_request)
+            return result
+    
+    try:
+        # Execute all analyses
+        tasks = [process_single_request(req) for req in request.requests]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Process results
+        final_results = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                failed_analyses += 1
+                final_results.append(AnalysisResponse(
+                    success=False,
+                    analysis=None,
+                    error_message=str(result),
+                    processing_time=0.0,
+                    analysis_cost=0.0,
+                    model_used="failed",
+                    confidence_score=0.0,
+                    completeness=0.0
+                ))
+                
+                if request.stop_on_error:
+                    break
+            else:
+                if result.success:
+                    successful_analyses += 1
+                else:
+                    failed_analyses += 1
+                total_cost += result.analysis_cost
+                final_results.append(result)
+        
+        total_processing_time = time.time() - start_time
+        
+        # Calculate averages
+        avg_processing_time = total_processing_time / len(final_results) if final_results else 0.0
+        avg_cost_per_analysis = total_cost / successful_analyses if successful_analyses > 0 else 0.0
+        avg_confidence = sum(r.confidence_score for r in final_results if r.success) / successful_analyses if successful_analyses > 0 else 0.0
+        avg_relevance = sum(r.analysis.relevance_score for r in final_results if r.success and r.analysis) / successful_analyses if successful_analyses > 0 else 0.0
+        
+        return BatchAnalysisResponse(
+            success=successful_analyses > 0,
+            results=final_results,
+            total_processed=len(final_results),
+            successful_analyses=successful_analyses,
+            failed_analyses=failed_analyses,
+            total_processing_time=total_processing_time,
+            total_cost=total_cost,
+            avg_processing_time=avg_processing_time,
+            avg_cost_per_analysis=avg_cost_per_analysis,
+            avg_confidence=avg_confidence,
+            avg_relevance=avg_relevance
+        )
+        
+    except Exception as e:
+        logger.error(f"Batch analysis failed: {e}")
+        return BatchAnalysisResponse(
+            success=False,
+            results=[],
+            total_processed=0,
+            successful_analyses=0,
+            failed_analyses=len(request.requests),
+            total_processing_time=time.time() - start_time,
+            total_cost=total_cost,
+            avg_processing_time=0.0,
+            avg_cost_per_analysis=0.0,
+            avg_confidence=0.0,
+            avg_relevance=0.0
+        )
+
+
+# Export main components
+__all__ = [
+    'content_analysis_agent',
+    'ContentAnalysisService',
+    'analyze_content',
+    'batch_analyze_content',
+    'get_content_analysis_service'
+]

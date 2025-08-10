@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { 
   Rss,
   Search,
@@ -154,6 +155,7 @@ function getTierColor(tier: NewsSource['tier']) {
 
 export default function SourcesPage() {
   return (
+    <DashboardLayout>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -344,5 +346,6 @@ export default function SourcesPage() {
         </Card>
       </div>
     </div>
+    </DashboardLayout>
   )
 }

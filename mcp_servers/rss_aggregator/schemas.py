@@ -173,6 +173,7 @@ class BatchFetchRequest(BaseModel):
     force_refresh: bool = Field(default=False, description="Bypass cache and force fresh fetch")
     max_articles_per_source: Optional[int] = Field(default=None, ge=1, le=200, description="Override max articles")
     parallel_limit: int = Field(default=5, ge=1, le=20, description="Max parallel requests")
+    save_to_database: bool = Field(default=False, description="Automatically save articles to database after fetching")
     
     # Content filtering
     keywords_filter: Optional[List[str]] = Field(default=None, description="Required keywords for inclusion")
@@ -224,6 +225,9 @@ class BatchFetchResult(BaseModel):
     # Error summary
     error_count: int = Field(default=0, ge=0, description="Number of errors encountered")
     error_summary: Dict[str, int] = Field(default_factory=dict, description="Error types and counts")
+    
+    # Database save results
+    database_save_results: Optional[Dict[str, Any]] = Field(default=None, description="Database save operation results")
     
     def add_feed_result(self, result: FeedFetchResult) -> None:
         """Add a feed result and update statistics"""

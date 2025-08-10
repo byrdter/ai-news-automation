@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/select'
 import { Filter, X } from 'lucide-react'
 
-interface FilterState {
+export interface FilterState {
   categories: string[]
   sources: string[]
   minRelevance: number
@@ -54,7 +54,11 @@ const availableSources = [
   'AI News'
 ]
 
-export function ArticleFilters() {
+interface Props {
+  onFiltersChange?: (filters: FilterState) => void
+}
+
+export function ArticleFilters({ onFiltersChange }: Props) {
   const [filters, setFilters] = useState<FilterState>({
     categories: [],
     sources: [],
@@ -67,8 +71,26 @@ export function ArticleFilters() {
     key: K, 
     value: FilterState[K]
   ) => {
-    setFilters(prev => ({ ...prev, [key]: value }))
+    const newFilters = { ...filters, [key]: value }
+    setFilters(newFilters)
+    
+    // Notify parent component of filter changes
+    if (onFiltersChange) {
+      onFiltersChange(newFilters)
+    }
+    
+    // Also dispatch a custom event for components that need to listen
+    window.dispatchEvent(new CustomEvent('filtersChanged', {
+      detail: newFilters
+    }))
   }
+
+  // Notify parent of initial filters
+  useEffect(() => {
+    if (onFiltersChange) {
+      onFiltersChange(filters)
+    }
+  }, [])
 
   const toggleCategory = (category: string) => {
     updateFilter('categories', 
@@ -87,13 +109,24 @@ export function ArticleFilters() {
   }
 
   const clearAllFilters = () => {
-    setFilters({
+    const clearedFilters = {
       categories: [],
       sources: [],
       minRelevance: 0,
-      dateRange: 'all',
-      tier: 'all'
-    })
+      dateRange: 'all' as const,
+      tier: 'all' as const
+    }
+    setFilters(clearedFilters)
+    
+    // Notify parent component of cleared filters
+    if (onFiltersChange) {
+      onFiltersChange(clearedFilters)
+    }
+    
+    // Dispatch event for cleared filters
+    window.dispatchEvent(new CustomEvent('filtersChanged', {
+      detail: clearedFilters
+    }))
   }
 
   const hasActiveFilters = 
