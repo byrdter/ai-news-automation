@@ -39,7 +39,7 @@ class AgentStatus(str, Enum):
 # Agent auto-discovery descriptions (critical for Claude Code co-agents)
 AGENT_DESCRIPTIONS = {
     AgentType.NEWS_DISCOVERY: (
-        "I am the News Discovery Agent specialized in monitoring 12+ AI news sources "
+        "I am the News Discovery Agent specialized in monitoring 13+ AI news sources "
         "via RSS feeds. I filter articles for AI relevance using keywords like AI, ML, LLM, "
         "neural networks, and maintain a 0.7+ relevance threshold. I deduplicate content "
         "and coordinate with Content Analysis Agent for deep analysis. I use MCP RSS Aggregator tools."
@@ -108,7 +108,7 @@ class SourceCategory(str, Enum):
     AI_NEWS_AGGREGATOR = "AI News Aggregator"
     EDUCATIONAL = "Educational"
 
-# Default news sources configuration (12+ sources as per PRP)
+# Default news sources configuration (13 sources - all with working RSS feeds)
 DEFAULT_NEWS_SOURCES = [
     # Tier 1 Sources (Highest Quality)
     {
@@ -121,7 +121,7 @@ DEFAULT_NEWS_SOURCES = [
     {
         "name": "Google AI Research",
         "url": "https://research.google/blog/",
-        "rss_feed_url": "https://research.googleblog.com/feeds/posts/default/-/AI",
+        "rss_feed_url": "https://research.google/blog/rss/",
         "tier": SourceTier.TIER_1,
         "category": SourceCategory.INDUSTRY_RESEARCH
     },
@@ -139,6 +139,20 @@ DEFAULT_NEWS_SOURCES = [
         "tier": SourceTier.TIER_1,
         "category": SourceCategory.ACADEMIC_RESEARCH
     },
+    {
+        "name": "DeepMind Blog",
+        "url": "https://deepmind.google/discover/blog/",
+        "rss_feed_url": "https://deepmind.google/blog/rss.xml",
+        "tier": SourceTier.TIER_1,
+        "category": SourceCategory.INDUSTRY_RESEARCH
+    },
+    {
+        "name": "Hugging Face Blog",
+        "url": "https://huggingface.co/blog",
+        "rss_feed_url": "https://huggingface.co/blog/feed.xml",
+        "tier": SourceTier.TIER_1,
+        "category": SourceCategory.INDUSTRY_RESEARCH
+    },
     
     # Tier 2 Sources (High Quality)
     {
@@ -154,13 +168,6 @@ DEFAULT_NEWS_SOURCES = [
         "rss_feed_url": "https://feeds.feedburner.com/venturebeat/SZYF",
         "tier": SourceTier.TIER_2,
         "category": SourceCategory.INDUSTRY_NEWS
-    },
-    {
-        "name": "Stanford HAI",
-        "url": "https://hai.stanford.edu/news",
-        "rss_feed_url": "https://hai.stanford.edu/news/rss.xml",
-        "tier": SourceTier.TIER_2,
-        "category": SourceCategory.ACADEMIC_RESEARCH
     },
     {
         "name": "NVIDIA AI Blog",

@@ -4,6 +4,7 @@ Location: mcp_servers/rss_aggregator/tools.py
 
 MCP tool implementations for RSS feed aggregation and processing.
 Used by News Discovery Agent and other agents for content collection.
+Enhanced with full article content extraction and perfect database integration.
 """
 
 import asyncio
@@ -17,6 +18,7 @@ from urllib.parse import urljoin, urlparse
 import aiohttp
 import feedparser
 from bs4 import BeautifulSoup
+import uuid
 from pydantic import ValidationError
 
 from config.constants import DEFAULT_NEWS_SOURCES, AI_KEYWORDS
@@ -42,6 +44,351 @@ _cache: Dict[str, CacheEntry] = {}
 _stats = RSSServerStats()
 _session: Optional[aiohttp.ClientSession] = None
 _server_start_time = time.time()
+
+# ============================================================================
+# ENHANCED CONTENT EXTRACTION FUNCTIONS
+# ============================================================================
+
+async def extract_full_article_content_enhanced(url: str, source_name: str, session: aiohttp.ClientSession) -> Optional[str]:
+    """
+    Extract full article content from URL when RSS only provides summary
+    Source-specific extraction logic for OpenAI, TechCrunch, DeepMind, etc.
+    """
+    if not url:
+        return None
+        
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+        }
+        
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15), headers=headers) as response:
+            if response.status == 200:
+                html = await response.text()
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                # Remove unwanted elements
+                for unwanted in soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe']):
+                    unwanted.decompose()
+                
+                # Source-specific content extraction
+                content = None
+                
+                if "openai.com" in url:
+                    content = extract_openai_content(soup)
+                elif "techcrunch.com" in url:
+                    content = extract_techcrunch_content(soup)
+                elif "deepmind.com" in url:
+                    content = extract_deepmind_content(soup)
+                elif "mit.edu" in url:
+                    content = extract_mit_content(soup)
+                elif "marktechpost.com" in url:
+                    content = extract_marktechpost_content(soup)
+                elif "arxiv.org" in url:
+                    content = extract_arxiv_content(soup)
+                elif "nvidia.com" in url:
+                    content = extract_nvidia_content(soup)
+                elif "anthropic.com" in url:
+                    content = extract_anthropic_content(soup)
+                else:
+                    content = extract_generic_content(soup)
+                
+                if content and len(content) > 200:
+                    return content[:8000]  # Limit content length
+                    
+    except Exception as e:
+        logger.warning(f"Failed to extract content from {url}: {str(e)[:100]}")
+    
+    return None
+
+def extract_openai_content(soup):
+    """Extract content from OpenAI blog posts"""
+    selectors = [
+        'div[data-testid="blog-post-content"]',
+        'div.blog-post-content',
+        'div.post-content',
+        'main .content',
+        'article .entry-content',
+        '.post-body',
+        'main article div',
+        'article',
+        'main'
+    ]
+    
+    for selector in selectors:
+        content_div = soup.select_one(selector)
+        if content_div:
+            text_elements = content_div.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li'])
+            if text_elements:
+                content = ' '.join([elem.get_text(strip=True) for elem in text_elements if elem.get_text(strip=True)])
+                content = ' '.join(content.split())
+                if len(content) > 200:
+                    return content
+    return ""
+
+def extract_techcrunch_content(soup):
+    """Extract content from TechCrunch articles"""
+    selectors = [
+        'div.article-content',
+        'div.entry-content', 
+        'div.single-post-content',
+        'div.post-content',
+        'article .content',
+        'main .wp-content',
+        '.post-body-content',
+        'div[data-module="ArticleBody"]',
+        'article',
+        'main'
+    ]
+    
+    for selector in selectors:
+        content_div = soup.select_one(selector)
+        if content_div:
+            # Remove ads and social elements
+            for unwanted in content_div.find_all([
+                'div[class*="ad"]', 'div[class*="advertisement"]',
+                'div[class*="social"]', 'div[class*="share"]',
+                'div[class*="related"]', 'div[class*="newsletter"]'
+            ]):
+                unwanted.decompose()
+            
+            text_elements = content_div.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+            if text_elements:
+                texts = [elem.get_text(strip=True) for elem in text_elements if len(elem.get_text(strip=True)) > 20]
+                content = ' '.join(texts)
+                content = ' '.join(content.split())
+                if len(content) > 200:
+                    return content
+    return ""
+
+def extract_deepmind_content(soup):
+    """Extract content from DeepMind blog posts"""
+    selectors = [
+        '.article-content',
+        '.post-content',
+        'main article',
+        '.blog-post-content',
+        'article .content',
+        'main .content',
+        'article',
+        'main'
+    ]
+    
+    for selector in selectors:
+        content_div = soup.select_one(selector)
+        if content_div:
+            text_elements = content_div.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+            if text_elements:
+                content = ' '.join([elem.get_text(strip=True) for elem in text_elements if len(elem.get_text(strip=True)) > 20])
+                content = ' '.join(content.split())
+                if len(content) > 200:
+                    return content
+    return ""
+
+def extract_mit_content(soup):
+    """Extract content from MIT News"""
+    selectors = [
+        '.news-article--body',
+        '.field-name-body',
+        '.article-body',
+        '.post-content',
+        'article .content',
+        'main .content',
+        'article',
+        'main'
+    ]
+    
+    for selector in selectors:
+        content_div = soup.select_one(selector)
+        if content_div:
+            text_elements = content_div.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+            if text_elements:
+                content = ' '.join([elem.get_text(strip=True) for elem in text_elements if len(elem.get_text(strip=True)) > 20])
+                content = ' '.join(content.split())
+                if len(content) > 200:
+                    return content
+    return ""
+
+def extract_marktechpost_content(soup):
+    """Extract content from MarkTechPost"""
+    selectors = [
+        '.entry-content',
+        '.post-content',
+        '.article-content',
+        '.content-area',
+        'article .content',
+        'main .content',
+        'article',
+        'main'
+    ]
+    
+    for selector in selectors:
+        content_div = soup.select_one(selector)
+        if content_div:
+            text_elements = content_div.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+            if text_elements:
+                content = ' '.join([elem.get_text(strip=True) for elem in text_elements if len(elem.get_text(strip=True)) > 20])
+                content = ' '.join(content.split())
+                if len(content) > 200:
+                    return content
+    return ""
+
+def extract_arxiv_content(soup):
+    """Extract content from arXiv papers"""
+    selectors = [
+        '.abstract',
+        '#abstract',
+        '.ltx_abstract',
+        '.abstract-content',
+        'blockquote.abstract',
+        'main',
+        'article'
+    ]
+    
+    for selector in selectors:
+        content_div = soup.select_one(selector)
+        if content_div:
+            # For arXiv, we primarily want the abstract
+            content = content_div.get_text(strip=True)
+            if len(content) > 100:
+                return ' '.join(content.split())
+    return ""
+
+def extract_nvidia_content(soup):
+    """Extract content from NVIDIA blog posts"""
+    selectors = [
+        '.blog-content',
+        '.post-content',
+        '.article-content',
+        '.entry-content',
+        'article .content',
+        'main .content',
+        'article',
+        'main'
+    ]
+    
+    for selector in selectors:
+        content_div = soup.select_one(selector)
+        if content_div:
+            text_elements = content_div.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+            if text_elements:
+                content = ' '.join([elem.get_text(strip=True) for elem in text_elements if len(elem.get_text(strip=True)) > 20])
+                content = ' '.join(content.split())
+                if len(content) > 200:
+                    return content
+    return ""
+
+def extract_anthropic_content(soup):
+    """Extract content from Anthropic blog posts"""
+    selectors = [
+        '.post-content',
+        '.blog-content',
+        '.article-content',
+        '.entry-content',
+        'article .content',
+        'main .content',
+        'article',
+        'main'
+    ]
+    
+    for selector in selectors:
+        content_div = soup.select_one(selector)
+        if content_div:
+            text_elements = content_div.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+            if text_elements:
+                content = ' '.join([elem.get_text(strip=True) for elem in text_elements if len(elem.get_text(strip=True)) > 20])
+                content = ' '.join(content.split())
+                if len(content) > 200:
+                    return content
+    return ""
+
+def extract_generic_content(soup):
+    """Generic content extraction for unknown sources"""
+    selectors = [
+        'article',
+        'div.content',
+        'div.post-content',
+        'div.entry-content',
+        'main',
+        '.article-body',
+        '.post-body',
+        '.blog-content',
+        '.single-post-content'
+    ]
+    
+    for selector in selectors:
+        content_div = soup.select_one(selector)
+        if content_div:
+            paragraphs = content_div.find_all('p')
+            if paragraphs:
+                content = ' '.join([p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 20])
+                content = ' '.join(content.split())
+                if len(content) > 200:
+                    return content
+    return ""
+
+# ============================================================================
+# DATABASE INTEGRATION FUNCTIONS
+# ============================================================================
+
+async def save_article_to_database(article_data: dict, source_id: str) -> bool:
+    """
+    Save article to database using exact schema structure
+    """
+    try:
+        import asyncpg
+        
+        settings = get_settings()
+        database_url = settings.database_url.get_secret_value()
+        
+        conn = await asyncpg.connect(database_url)
+        
+        # Generate UUID for article
+        article_id = str(uuid.uuid4())
+        
+        # Prepare data with exact column names from schema
+        await conn.execute("""
+            INSERT INTO articles (
+                id, title, url, content, summary, source_id, 
+                published_at, author, word_count, 
+                relevance_score, content_hash,
+                created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, 
+                $7, $8, $9, 
+                $10, $11,
+                $12, $13
+            )
+            ON CONFLICT (url) DO UPDATE SET
+                content = EXCLUDED.content,
+                summary = EXCLUDED.summary,
+                word_count = EXCLUDED.word_count,
+                updated_at = EXCLUDED.updated_at
+        """,
+        article_id,                                           # id
+        article_data.get('title', '')[:500],                 # title (max 500 chars)
+        article_data.get('url', '')[:1000],                  # url (max 1000 chars)
+        article_data.get('content'),                         # content (text)
+        article_data.get('summary'),                         # summary (text)
+        source_id,                                           # source_id (uuid)
+        article_data.get('published_at'),                    # published_at
+        article_data.get('author', '')[:255] if article_data.get('author') else None,  # author (max 255 chars)
+        len(article_data.get('content', '').split()) if article_data.get('content') else None,  # word_count
+        article_data.get('relevance_score', 0.0),            # relevance_score
+        article_data.get('content_hash'),                    # content_hash
+        datetime.now(timezone.utc),                          # created_at
+        datetime.now(timezone.utc)                           # updated_at
+        )
+        
+        await conn.close()
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error saving article to database: {e}")
+        return False
 
 # ============================================================================
 # UTILITY FUNCTIONS
@@ -161,13 +508,13 @@ def is_cache_valid(cache_entry: CacheEntry) -> bool:
     return not cache_entry.is_expired
 
 # ============================================================================
-# CORE RSS PROCESSING FUNCTIONS
+# CORE RSS PROCESSING FUNCTIONS (ENHANCED)
 # ============================================================================
 
 async def fetch_single_rss_feed(source: RSSSourceConfig, 
                                max_articles: Optional[int] = None,
                                force_refresh: bool = False) -> FeedFetchResult:
-    """Fetch and process a single RSS feed"""
+    """Fetch and process a single RSS feed with enhanced content extraction"""
     start_time = time.time()
     result = FeedFetchResult(
         source_name=source.name,
@@ -251,7 +598,7 @@ async def fetch_single_rss_feed(source: RSSSourceConfig,
                         except (ValueError, TypeError):
                             continue
                 
-                # Extract content
+                # Extract content (ENHANCED VERSION)
                 content = None
                 description = None
                 
@@ -269,6 +616,21 @@ async def fetch_single_rss_feed(source: RSSSourceConfig,
                     description = soup.get_text().strip()
                     if len(description) > 2000:
                         description = description[:1997] + "..."
+                
+                # ENHANCED: If content is short or missing, extract full article
+                if not content or len(content) < 500:
+                    logger.info(f"Extracting full content for: {getattr(entry, 'title', 'No title')[:50]}...")
+                    full_content = await extract_full_article_content_enhanced(
+                        entry_url, 
+                        source.name, 
+                        session
+                    )
+                    if full_content:
+                        content = full_content
+                        logger.info(f"✅ Extracted {len(full_content)} chars")
+                    else:
+                        logger.warning(f"❌ Could not extract content, using description")
+                        content = description  # Fallback to description
                 
                 # Extract categories
                 categories = []
@@ -289,11 +651,13 @@ async def fetch_single_rss_feed(source: RSSSourceConfig,
                 )
                 
                 # Generate content hash for deduplication
-                hash_content = f"{article.title} {article.description or ''}"
+                hash_content = f"{article.title} {article.description or ''} {article.content or ''}"
                 article.content_hash = generate_content_hash(hash_content)
                 
                 # Calculate word count
-                if article.description:
+                if article.content:
+                    article.word_count = len(article.content.split())
+                elif article.description:
                     article.word_count = len(article.description.split())
                 
                 # Calculate relevance score
@@ -301,14 +665,14 @@ async def fetch_single_rss_feed(source: RSSSourceConfig,
                 
                 # Filter by relevance if keywords specified
                 if source.keywords:
-                    if not any(keyword.lower() in (article.title + " " + (article.description or "")).lower() 
-                              for keyword in source.keywords):
+                    search_text = f"{article.title} {article.description or ''} {article.content or ''}"
+                    if not any(keyword.lower() in search_text.lower() for keyword in source.keywords):
                         continue
                 
                 # Filter by exclude keywords
                 if source.exclude_keywords:
-                    text_content = (article.title + " " + (article.description or "")).lower()
-                    if any(keyword.lower() in text_content for keyword in source.exclude_keywords):
+                    search_text = f"{article.title} {article.description or ''} {article.content or ''}".lower()
+                    if any(keyword.lower() in search_text for keyword in source.exclude_keywords):
                         continue
                 
                 articles.append(article)
@@ -340,7 +704,7 @@ async def fetch_single_rss_feed(source: RSSSourceConfig,
         _stats.successful_fetches += 1
         _stats.total_articles_discovered += len(articles)
         
-        logger.info(f"Successfully fetched {len(articles)} articles from {source.name}")
+        logger.info(f"Successfully fetched {len(articles)} articles from {source.name} with enhanced content")
         return result
         
     except asyncio.TimeoutError:
@@ -370,7 +734,7 @@ async def fetch_single_rss_feed(source: RSSSourceConfig,
     return result
 
 async def fetch_article_content(article_url: str, source_name: str = "") -> Dict[str, Any]:
-    """Fetch full content for a specific article"""
+    """Fetch full content for a specific article using enhanced extraction"""
     start_time = time.time()
     result = {
         "url": article_url,
@@ -388,107 +752,19 @@ async def fetch_article_content(article_url: str, source_name: str = "") -> Dict
     try:
         session = await get_http_session()
         
-        async with session.get(article_url) as response:
-            if response.status != 200:
-                result["error_message"] = f"HTTP {response.status}"
-                return result
-            
-            html_content = await response.text()
+        # Use enhanced content extraction
+        content = await extract_full_article_content_enhanced(article_url, source_name, session)
         
-        # Parse HTML content
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # Remove script and style elements
-        for script in soup(["script", "style"]):
-            script.decompose()
-        
-        # Extract title
-        title_tag = soup.find('title')
-        if title_tag:
-            result["title"] = title_tag.get_text().strip()
-        
-        # Extract meta description as fallback
-        meta_desc = soup.find('meta', attrs={'name': 'description'})
-        if meta_desc and meta_desc.get('content'):
-            description = meta_desc['content'].strip()
+        if content:
+            result["content"] = content
+            result["word_count"] = len(content.split())
+            result["success"] = True
         else:
-            description = None
+            result["error_message"] = "Could not extract content"
         
-        # Try to find main content
-        content_selectors = [
-            'article',
-            '.post-content',
-            '.entry-content', 
-            '.content',
-            'main',
-            '.main-content',
-            '#content'
-        ]
-        
-        content_element = None
-        for selector in content_selectors:
-            content_element = soup.select_one(selector)
-            if content_element:
-                break
-        
-        if content_element:
-            # Extract text from content element
-            content_text = content_element.get_text(separator='\n', strip=True)
-        else:
-            # Fallback to body text
-            body = soup.find('body')
-            content_text = body.get_text(separator='\n', strip=True) if body else ""
-        
-        # Clean and validate content
-        if content_text:
-            # Remove excessive whitespace
-            lines = [line.strip() for line in content_text.split('\n') if line.strip()]
-            content_text = '\n'.join(lines)
-            
-            # Limit content length
-            settings = get_settings()
-            max_length = getattr(settings, 'max_content_length', 50000)
-            if len(content_text) > max_length:
-                content_text = content_text[:max_length-3] + "..."
-            
-            result["content"] = content_text
-            result["word_count"] = len(content_text.split())
-        
-        # Try to extract author
-        author_selectors = [
-            '.author',
-            '.byline', 
-            '[rel="author"]',
-            '.post-author',
-            '.article-author'
-        ]
-        
-        for selector in author_selectors:
-            author_element = soup.select_one(selector)
-            if author_element:
-                result["author"] = author_element.get_text().strip()
-                break
-        
-        # Try to extract publication date
-        date_selectors = [
-            'time[datetime]',
-            '.published',
-            '.post-date',
-            '.article-date'
-        ]
-        
-        for selector in date_selectors:
-            date_element = soup.select_one(selector)
-            if date_element:
-                date_text = date_element.get('datetime') or date_element.get_text().strip()
-                # Simple date parsing - could be enhanced
-                result["published_date"] = date_text
-                break
-        
-        result["success"] = True
         result["fetch_duration"] = time.time() - start_time
         
-        logger.info(f"Successfully fetched article content: {article_url}")
+        logger.info(f"Enhanced content extraction for {article_url}: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}")
         return result
         
     except Exception as e:
@@ -498,7 +774,7 @@ async def fetch_article_content(article_url: str, source_name: str = "") -> Dict
         return result
 
 # ============================================================================
-# MCP TOOL FUNCTIONS
+# MCP TOOL FUNCTIONS (EXISTING FUNCTIONS REMAIN THE SAME)
 # ============================================================================
 
 async def initialize_sources() -> Dict[str, Any]:
@@ -528,13 +804,14 @@ async def initialize_sources() -> Dict[str, Any]:
         _stats.total_sources = len(_source_configs)
         _stats.active_sources = sum(1 for source in _source_configs.values() if source.active)
         
-        logger.info(f"Initialized {len(_source_configs)} RSS sources")
+        logger.info(f"Initialized {len(_source_configs)} RSS sources with enhanced content extraction")
         
         return {
             "success": True,
             "sources_loaded": len(_source_configs),
             "active_sources": _stats.active_sources,
-            "sources": list(_source_configs.keys())
+            "sources": list(_source_configs.keys()),
+            "enhanced_extraction": True
         }
         
     except Exception as e:
@@ -545,7 +822,7 @@ async def initialize_sources() -> Dict[str, Any]:
         }
 
 async def fetch_all_sources(request: BatchFetchRequest) -> BatchFetchResult:
-    """Fetch articles from multiple RSS sources"""
+    """Fetch articles from multiple RSS sources with enhanced content extraction"""
     global _stats
     
     result = BatchFetchResult(request=request)
@@ -581,7 +858,7 @@ async def fetch_all_sources(request: BatchFetchRequest) -> BatchFetchResult:
             result.finalize()
             return result
         
-        logger.info(f"Fetching from {len(sources_to_fetch)} sources")
+        logger.info(f"Fetching from {len(sources_to_fetch)} sources with enhanced content extraction")
         
         # Create semaphore for concurrency control
         semaphore = asyncio.Semaphore(request.parallel_limit)
@@ -633,7 +910,7 @@ async def fetch_all_sources(request: BatchFetchRequest) -> BatchFetchResult:
         if request.keywords_filter:
             filtered_articles = []
             for article in all_articles:
-                text_content = f"{article.title} {article.description or ''}".lower()
+                text_content = f"{article.title} {article.description or ''} {article.content or ''}".lower()
                 if any(keyword.lower() in text_content for keyword in request.keywords_filter):
                     filtered_articles.append(article)
                 else:
@@ -675,7 +952,7 @@ async def fetch_all_sources(request: BatchFetchRequest) -> BatchFetchResult:
             result.database_save_results = database_save_results
         
         logger.info(
-            f"Batch fetch completed: {result.total_articles} articles, "
+            f"Enhanced batch fetch completed: {result.total_articles} articles, "
             f"{result.new_articles} new, {result.duplicate_articles} duplicates, "
             f"{result.sources_successful}/{result.sources_attempted} sources successful"
         )
@@ -689,7 +966,7 @@ async def fetch_all_sources(request: BatchFetchRequest) -> BatchFetchResult:
         return result
         
     except Exception as e:
-        logger.error(f"Error in batch fetch: {e}")
+        logger.error(f"Error in enhanced batch fetch: {e}")
         result.error_count += 1
         result.error_summary["batch_error"] = 1
         result.finalize()
@@ -724,7 +1001,8 @@ async def get_cached_articles(source_name: Optional[str] = None,
             "articles_count": len(cached_articles),
             "articles": [article.dict() for article in cached_articles],
             "cache_entries": len(_cache),
-            "source_name": source_name
+            "source_name": source_name,
+            "enhanced_extraction": True
         }
         
     except Exception as e:
@@ -764,6 +1042,7 @@ async def get_server_status() -> Dict[str, Any]:
             "success": True,
             "server_status": "healthy",
             "uptime_hours": _stats.uptime_seconds / 3600,
+            "enhanced_extraction": True,
             "statistics": _stats.dict(),
             "source_summary": {
                 "total": _stats.total_sources,

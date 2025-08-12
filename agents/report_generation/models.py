@@ -196,7 +196,7 @@ class ReportMetadata(BaseModel):
     avg_quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
     
     # Generation details
-    generation_model: str = Field(default="gpt-4o-mini")
+    generation_model: str = Field(default="gpt-5-mini")
     generation_time: float = Field(default=0.0, ge=0.0, description="Generation time in seconds")
     generation_cost: float = Field(default=0.0, ge=0.0, description="Cost in USD")
     template_version: str = Field(default="1.0")
@@ -307,7 +307,7 @@ class ReportGenerationRequest(BaseModel):
     
     # Generation options
     max_generation_cost: float = Field(default=0.50, ge=0.01, le=5.0)
-    generation_model: str = Field(default="gpt-4o-mini")
+    generation_model: str = Field(default="gpt-5-mini")
     template_name: Optional[str] = None
     custom_styling: Dict[str, Any] = Field(default_factory=dict)
 

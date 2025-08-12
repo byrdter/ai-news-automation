@@ -110,7 +110,7 @@ export default function ArticlePage() {
                 </div>
                 <div className="flex items-center gap-1">
                   <Clock className="h-4 w-4" />
-                  <span>{getTimeAgo(article.published_at)}</span>
+                  <span>{getTimeAgo(article.published_at || new Date().toISOString())}</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Eye className="h-4 w-4" />

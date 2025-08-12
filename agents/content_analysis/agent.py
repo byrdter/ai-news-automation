@@ -68,7 +68,7 @@ def get_content_analysis_agent():
     global _content_analysis_agent
     if _content_analysis_agent is None:
         _content_analysis_agent = Agent(
-            'openai:gpt-4o-mini',  # For structured output, then use Cohere for heavy lifting
+            'openai:gpt-5-mini',  # For structured output, then use Cohere for heavy lifting
             deps_type=ContentAnalysisDeps,
             output_type=DetailedAnalysis,
             system_prompt="""You are an AI Content Analysis Agent specialized in analyzing AI and technology news content.

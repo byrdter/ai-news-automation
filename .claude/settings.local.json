@@ -31,7 +31,14 @@
       "WebFetch(domain:nextjs.org)",
       "WebFetch(domain:supabase.com)",
       "WebFetch(domain:ui.shadcn.com)",
-      "Bash(npx create-next-app:*)"
+      "Bash(npx create-next-app:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run dev:*)",
+      "Bash(open http://localhost:3003/articles)",
+      "Bash(curl:*)",
+      "Bash(/dev/null)",
+      "WebFetch(domain:www.anthropic.com)"
     ],
     "deny": []
   }

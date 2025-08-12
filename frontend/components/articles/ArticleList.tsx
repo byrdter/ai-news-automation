@@ -10,6 +10,7 @@ import type { FilterState } from './ArticleFilters'
 interface ArticleFilters {
   categories?: string[]
   sources?: string[]
+  sourceTier?: number
   minRelevance?: number
   dateRange?: {
     start: string
@@ -35,6 +36,12 @@ function convertFilterStateToArticleFilters(filterState: FilterState): ArticleFi
   if (filterState.sources && filterState.sources.length > 0) {
     filters.sources = filterState.sources  
     console.log('Added sources filter:', filterState.sources)
+  }
+  
+  // Handle source tier filtering
+  if (filterState.tier && filterState.tier !== 'all') {
+    filters.sourceTier = parseInt(filterState.tier)
+    console.log('Added source tier filter:', filters.sourceTier)
   }
   
   if (filterState.minRelevance && filterState.minRelevance > 0) {
@@ -96,6 +103,10 @@ async function fetchArticles(
       params.set('sources', filters.sources.join(','))
       console.log('Adding sources param:', filters.sources.join(','))
     }
+    if (filters.sourceTier) {
+      params.set('sourceTier', filters.sourceTier.toString())
+      console.log('Adding sourceTier param:', filters.sourceTier.toString())
+    }
     if (filters.dateRange) {
       params.set('start_date', filters.dateRange.start)
       params.set('end_date', filters.dateRange.end)
@@ -118,6 +129,12 @@ async function fetchArticles(
 
     const result = await response.json()
     console.log('API response:', result)
+    console.log('Returning to infinite query:', {
+      data: result.articles || [],
+      nextCursor: result.hasMore ? page + 1 : undefined,
+      hasMore: result.hasMore || false,
+      articlesCount: (result.articles || []).length
+    })
     
     return {
       data: result.articles || [],
@@ -133,7 +150,17 @@ async function fetchArticles(
 export function ArticleList() {
   const [filters, setFilters] = useState<ArticleFilters>({})
   const [searchQuery, setSearchQuery] = useState('')
+  const [isClient, setIsClient] = useState(false)
+  
+  console.log('🔥 ArticleList render - filters:', filters, 'searchQuery:', searchQuery)
+  console.log('🖥️ Client-side check:', typeof window !== 'undefined')
   const queryClient = useQueryClient()
+
+  // Ensure we're client-side before running queries
+  useEffect(() => {
+    setIsClient(true)
+    console.log('✅ useEffect is working! Setting isClient to true')
+  }, [])
 
   // Listen for filter changes from ArticleFilters component
   useEffect(() => {
@@ -167,21 +194,29 @@ export function ArticleList() {
     isLoading,
     error
   } = useInfiniteQuery({
-    queryKey: ['articles', filters, searchQuery],
-    queryFn: ({ pageParam = 0 }) => fetchArticles(pageParam, filters, searchQuery),
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    queryKey: ['articles', filters, searchQuery], // Include filters and search in key so React Query refetches on change
+    queryFn: async ({ pageParam = 0 }) => {
+      console.log('🚀 React Query calling fetch with pageParam:', pageParam, 'filters:', filters, 'searchQuery:', searchQuery)
+      return fetchArticles(pageParam, filters, searchQuery)
+    },
+    getNextPageParam: (lastPage) => {
+      console.log('📄 getNextPageParam called with nextCursor:', lastPage.nextCursor)
+      return lastPage.nextCursor
+    },
     initialPageParam: 0,
+    enabled: isClient, // Only run query when client-side
   })
+  
+  console.log('Query state:', { isClient, isLoading, error: error?.message, data: !!data, hasData: !!data?.pages?.length, enabled: isClient })
 
-  // Invalidate and refetch when filters or search change to ensure clean data
-  useEffect(() => {
-    if (Object.keys(filters).length > 0 || searchQuery) {
-      console.log('Invalidating query due to filter/search change')
-      queryClient.invalidateQueries({ queryKey: ['articles'] })
-    }
-  }, [filters, searchQuery, queryClient])
+  // No longer need to manually invalidate - React Query handles this automatically
+  // because filters and searchQuery are in the query key
 
   const articles = data?.pages.flatMap(page => page.data) ?? []
+  
+  console.log('Infinite query data:', data)
+  console.log('Pages:', data?.pages?.length || 0)
+  console.log('Flattened articles:', articles.length)
 
   if (isLoading) {
     return (
@@ -218,7 +253,7 @@ export function ArticleList() {
 
   const hasActiveFilters = 
     Object.keys(filters).length > 0 && 
-    (filters.categories?.length || filters.sources?.length || filters.minRelevance || filters.dateRange || searchQuery)
+    (filters.categories?.length || filters.sources?.length || filters.sourceTier || filters.minRelevance || filters.dateRange || searchQuery)
 
   return (
     <div className="space-y-6">
@@ -233,6 +268,9 @@ export function ArticleList() {
               )}
               {filters.sources?.length && (
                 <span className="ml-2">Sources: {filters.sources.length}</span>
+              )}
+              {filters.sourceTier && (
+                <span className="ml-2">Tier: {filters.sourceTier}</span>
               )}
               {filters.minRelevance && (
                 <span className="ml-2">Min Relevance: {Math.round(filters.minRelevance * 100)}%</span>

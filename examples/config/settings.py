@@ -82,7 +82,7 @@ class LLMConfig(BaseSettings):
     
     # OpenAI Configuration
     openai_api_key: SecretStr = Field(..., env="OPENAI_API_KEY")
-    openai_model: str = Field("gpt-4o-mini", env="OPENAI_MODEL")
+    openai_model: str = Field("gpt-5-mini", env="OPENAI_MODEL")
     openai_max_tokens: int = Field(4000, env="OPENAI_MAX_TOKENS")
     openai_temperature: float = Field(0.1, env="OPENAI_TEMPERATURE")
     

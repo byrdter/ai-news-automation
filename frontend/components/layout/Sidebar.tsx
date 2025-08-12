@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { useArticleCount } from '@/hooks/useArticleCount'
+import { useReportCount } from '@/hooks/useReportCount'
 import { 
   BarChart3, 
   FileText, 
@@ -18,47 +20,49 @@ interface SidebarProps {
   onNavigate?: () => void
 }
 
-const navItems = [
-  {
-    name: 'Dashboard',
-    href: '/',
-    icon: Home,
-    description: 'System overview and metrics'
-  },
-  {
-    name: 'Articles',
-    href: '/articles',
-    icon: Newspaper,
-    description: '152+ AI-analyzed articles'
-  },
-  {
-    name: 'Reports',
-    href: '/reports',
-    icon: FileText,
-    description: '121+ comprehensive reports'
-  },
-  {
-    name: 'Analytics',
-    href: '/analytics',
-    icon: BarChart3,
-    description: 'Performance and cost metrics'
-  },
-  {
-    name: 'Sources',
-    href: '/sources',
-    icon: Rss,
-    description: 'RSS feed management'
-  },
-  {
-    name: 'Settings',
-    href: '/settings',
-    icon: Settings,
-    description: 'System configuration'
-  }
-]
-
 export function Sidebar({ mobile = false, onNavigate }: SidebarProps) {
   const pathname = usePathname()
+  const { displayCount } = useArticleCount()
+  const { displayCount: reportDisplayCount } = useReportCount()
+
+  const navItems = [
+    {
+      name: 'Dashboard',
+      href: '/',
+      icon: Home,
+      description: 'System overview and metrics'
+    },
+    {
+      name: 'Articles',
+      href: '/articles',
+      icon: Newspaper,
+      description: `${displayCount} AI-analyzed articles`
+    },
+    {
+      name: 'Reports',
+      href: '/reports',
+      icon: FileText,
+      description: `${reportDisplayCount} comprehensive reports`
+    },
+    {
+      name: 'Analytics',
+      href: '/analytics',
+      icon: BarChart3,
+      description: 'Performance and cost metrics'
+    },
+    {
+      name: 'Sources',
+      href: '/sources',
+      icon: Rss,
+      description: 'RSS feed management'
+    },
+    {
+      name: 'Settings',
+      href: '/settings',
+      icon: Settings,
+      description: 'System configuration'
+    }
+  ]
 
   return (
     <div className={cn(

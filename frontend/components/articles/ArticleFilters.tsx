@@ -22,6 +22,8 @@ export interface FilterState {
   tier: 'all' | '1' | '2' | '3'
 }
 
+// Categories that articles can be tagged with
+// Some may not have articles yet but will be available for future content
 const availableCategories = [
   'AI Research',
   'Language Models', 
@@ -36,22 +38,30 @@ const availableCategories = [
   'Anthropic',
   'Startup News',
   'Funding',
-  'Product Launch'
+  'Product Launch',
+  // Also include categories currently in the database
+  'Artificial Intelligence',
+  'Technology',
+  'Editors Pick',
+  'Staff'
 ]
 
+// AI-focused news sources that are actually configured in the system
+// These are the sources we're actively collecting articles from
 const availableSources = [
-  'OpenAI Blog',
-  'DeepMind Blog',
+  'OpenAI Blog',        // 55 articles
+  'MIT AI News',        // 50 articles
+  'TechCrunch AI',      // 38 articles
+  'MarkTechPost',       // 20 articles
+  'NVIDIA AI Blog',     // 19 articles
+  'DeepMind Blog',      // 10 articles
+  'BAIR Blog',          // 10 articles (Berkeley AI Research)
+  'Analytics Vidhya',   // 10 articles
+  // Future sources to be added:
   'Google AI Blog',
-  'MIT AI News',
-  'TechCrunch AI',
-  'VentureBeat AI',
-  'NVIDIA Blog',
   'Anthropic News',
-  'Stanford HAI',
-  'Berkeley AI Research',
   'Hugging Face Blog',
-  'AI News'
+  'Stanford HAI'
 ]
 
 interface Props {

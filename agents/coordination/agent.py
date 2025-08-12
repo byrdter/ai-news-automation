@@ -64,7 +64,7 @@ class TaskCoordinationPlan(BaseModel):
 
 # Create Coordination Agent
 coordination_agent = Agent(
-    'openai:gpt-4o-mini',
+    'openai:gpt-5-mini',
     deps_type=CoordinationDeps,
     result_type=TaskCoordinationPlan,
     system_prompt="""You are an AI Coordination Agent responsible for orchestrating multi-agent workflows in an AI News Automation System.

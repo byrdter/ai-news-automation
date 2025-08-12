@@ -1,10 +1,15 @@
+'use client'
+
 import { Suspense } from 'react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { ArticleList } from '@/components/articles/ArticleList'
 import { ArticleFilters } from '@/components/articles/ArticleFilters'
 import { ArticleSearch } from '@/components/articles/ArticleSearch'
+import { useArticleCount } from '@/hooks/useArticleCount'
 
 export default function ArticlesPage() {
+  const { displayCount } = useArticleCount()
+  
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -12,7 +17,7 @@ export default function ArticlesPage() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Articles</h1>
             <p className="text-gray-600 mt-1">
-              152+ AI-analyzed articles with semantic search and filtering
+              {displayCount} AI-analyzed articles with semantic search and filtering
             </p>
           </div>
         </div>

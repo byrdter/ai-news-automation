@@ -65,7 +65,7 @@ class AlertEvaluation(BaseModel):
 
 # Create Alert Agent
 alert_agent = Agent(
-    'openai:gpt-4o-mini',
+    'openai:gpt-5-mini',
     deps_type=AlertEvaluationDeps,
     result_type=AlertEvaluation,
     system_prompt="""You are an AI Alert Agent specialized in detecting breaking news and urgent developments in AI and technology.
@@ -274,7 +274,7 @@ class AlertService:
             self.cost_tracker.track_operation(
                 operation="alert_evaluation",
                 service=ServiceType.OPENAI,
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 input_tokens=len(request.article_content.split()) * 1.3,
                 output_tokens=len(evaluation.headline.split()) * 10,
                 cost_usd=evaluation_cost

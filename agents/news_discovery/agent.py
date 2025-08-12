@@ -53,7 +53,7 @@ class RelevanceAssessment(BaseModel):
 
 # Create News Discovery Agent
 news_discovery_agent = Agent(
-    'openai:gpt-4o-mini',
+    'openai:gpt-5-mini',
     deps_type=DiscoveryDeps,
     result_type=NewsDiscoveryResponse,
     system_prompt="""You are an AI News Discovery Agent specialized in finding, filtering, and evaluating AI-related news content.
@@ -334,7 +334,7 @@ async def _assess_article_relevance(article: RawArticle, deps: DiscoveryDeps) ->
     
     # Create assessment agent
     assessment_agent = Agent(
-        'openai:gpt-4o-mini',
+        'openai:gpt-5-mini',
         result_type=RelevanceAssessment,
         system_prompt="""You are an AI content evaluator specialized in assessing news articles for relevance to AI industry professionals.
 
@@ -384,7 +384,7 @@ Tags: {', '.join(article.tags) if article.tags else 'None'}
         # Track cost
         deps.cost_tracker.track_operation(
             operation_type="relevance_assessment",
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             input_tokens=len(content_summary.split()) * 1.3,  # Rough estimate
             output_tokens=50,  # Approximate
             cost_usd=0.01

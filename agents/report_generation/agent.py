@@ -52,7 +52,7 @@ class ReportSummaryData(BaseModel):
 
 # Create Report Generation Agent
 report_generation_agent = Agent(
-    'openai:gpt-4o-mini',
+    'openai:gpt-5-mini',
     deps_type=ReportGenerationDeps,
     result_type=ReportSummaryData,
     system_prompt="""You are an AI Report Generation Agent specialized in creating comprehensive, professional AI news reports.

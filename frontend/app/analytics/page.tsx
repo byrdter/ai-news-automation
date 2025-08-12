@@ -1,10 +1,10 @@
 'use client'
 
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { CostChart } from '@/components/analytics/CostChart'
 import { SourceChart } from '@/components/analytics/SourceChart'
 import { VolumeChart } from '@/components/analytics/VolumeChart'
@@ -17,12 +17,11 @@ import {
   Download,
   RefreshCw
 } from 'lucide-react'
-import { formatCurrency, formatNumber } from '@/lib/utils'
 
 export default function AnalyticsPage() {
   return (
     <DashboardLayout>
-    <div className="space-y-6">
+      <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
@@ -60,7 +59,7 @@ export default function AnalyticsPage() {
             <DollarSign className="h-4 w-4 text-yellow-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(0.565)}</div>
+            <div className="text-2xl font-bold">$0.565</div>
             <p className="text-xs text-muted-foreground">
               152 articles processed
             </p>

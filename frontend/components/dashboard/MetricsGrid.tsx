@@ -3,6 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatNumber } from '@/lib/utils'
+import { useTodayArticleCount } from '@/hooks/useTodayArticleCount'
+import { useReportCount } from '@/hooks/useReportCount'
+import { useArticleCount } from '@/hooks/useArticleCount'
+import { useRouter } from 'next/navigation'
 import {
   FileText,
   Newspaper,
@@ -15,6 +19,11 @@ import {
 } from 'lucide-react'
 
 export function MetricsGrid() {
+  const router = useRouter()
+  const { count: todayCount, dateLabel } = useTodayArticleCount()
+  const { count: reportCount } = useReportCount()
+  const { count: totalArticles } = useArticleCount()
+  
   const { data: metricsData, isLoading, error } = useQuery({
     queryKey: ['dashboard-metrics'],
     queryFn: async () => {
@@ -26,6 +35,27 @@ export function MetricsGrid() {
     },
     refetchInterval: 30000,
   })
+
+  const handleTodayArticlesClick = async () => {
+    try {
+      // Get the most recent article date
+      const response = await fetch('/api/articles?page=0&limit=1')
+      const result = await response.json()
+      if (result.articles?.[0]) {
+        const mostRecentDate = result.articles[0].published_at.split('T')[0]
+        const nextDay = new Date(mostRecentDate)
+        nextDay.setDate(nextDay.getDate() + 1)
+        const nextDayStr = nextDay.toISOString().split('T')[0]
+        router.push(`/articles?start_date=${mostRecentDate}&end_date=${nextDayStr}`)
+      } else {
+        // Fallback to articles page without filter
+        router.push('/articles')
+      }
+    } catch (error) {
+      console.error('Error navigating to recent articles:', error)
+      router.push('/articles')
+    }
+  }
 
   if (isLoading) {
     return (
@@ -61,17 +91,21 @@ export function MetricsGrid() {
   const metrics = [
     {
       title: "Total Articles",
-      value: formatNumber(metricsData?.totalMetrics?.articlesProcessed || 0),
+      value: formatNumber(totalArticles || metricsData?.totalMetrics?.articlesProcessed || 0),
       description: "100% AI analyzed",
-      change: "+12 today",
+      change: `+${todayCount} ${dateLabel}`,
+      onClick: handleTodayArticlesClick,
+      clickable: true,
       icon: Newspaper,
       color: "text-blue-600"
     },
     {
       title: "Reports Generated", 
-      value: formatNumber(metricsData?.totalMetrics?.reportsGenerated || 0),
+      value: formatNumber(reportCount || metricsData?.totalMetrics?.reportsGenerated || 0),
       description: "Daily, weekly & monthly",
-      change: "+3 this week",
+      change: `${reportCount > 0 ? 'Available' : 'Coming soon'}`,
+      onClick: reportCount > 0 ? () => router.push('/reports') : undefined,
+      clickable: reportCount > 0,
       icon: FileText,
       color: "text-green-600"
     },
@@ -85,7 +119,7 @@ export function MetricsGrid() {
     },
     {
       title: "Active Sources",
-      value: formatNumber(metricsData?.systemHealth?.activeSources || 13),
+      value: formatNumber(metricsData?.systemHealth?.activeSources || 0),
       description: "Tier 1-3 news sources",
       change: "All operational",
       icon: Rss,
@@ -93,7 +127,7 @@ export function MetricsGrid() {
     },
     {
       title: "Processing Rate",
-      value: `${formatNumber(metricsData?.systemHealth?.processingRate || 24)}/hr`,
+      value: `${formatNumber(metricsData?.systemHealth?.processingRate || 0)}/hr`,
       description: "Articles per hour",
       change: "Peak efficiency",
       icon: TrendingUp,
@@ -101,7 +135,7 @@ export function MetricsGrid() {
     },
     {
       title: "Avg Relevance",
-      value: "83.0%",
+      value: `${((metricsData?.sourcePerformance?.[0]?.avgRelevance || 0) * 100).toFixed(1)}%`,
       description: "Content quality score", 
       change: "High quality",
       icon: Target,
@@ -120,7 +154,7 @@ export function MetricsGrid() {
       value: formatCurrency(
         metricsData?.totalMetrics?.articlesProcessed 
           ? (metricsData.totalMetrics.totalCost / metricsData.totalMetrics.articlesProcessed)
-          : 0.0038
+          : 0
       ),
       description: "Efficiency metric",
       change: "Optimized",
@@ -147,7 +181,11 @@ export function MetricsGrid() {
                 {metric.description}
               </p>
               <div className="flex items-center pt-1">
-                <Badge variant="outline" className="text-xs">
+                <Badge 
+                  variant="outline" 
+                  className={`text-xs ${metric.clickable ? 'cursor-pointer hover:bg-blue-50 hover:border-blue-300' : ''}`}
+                  onClick={metric.onClick}
+                >
                   {metric.change}
                 </Badge>
               </div>

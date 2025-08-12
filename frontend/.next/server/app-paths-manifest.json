@@ -1,6 +1,11 @@
 {
   "/api/articles/route": "app/api/articles/route.js",
-  "/page": "app/page.js",
+  "/api/analytics/route": "app/api/analytics/route.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/reports/route": "app/api/reports/route.js",
+  "/settings/page": "app/settings/page.js",
   "/articles/page": "app/articles/page.js",
-  "/reports/page": "app/reports/page.js"
+  "/analytics/page": "app/analytics/page.js",
+  "/sources/page": "app/sources/page.js",
+  "/page": "app/page.js"
 }
